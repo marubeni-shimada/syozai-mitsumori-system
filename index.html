@@ -413,7 +413,11 @@ $('masterIn').addEventListener('change',async e=>{
   const file=e.target.files[0]; if(!file)return;
   if(!GAS_URL){ toast('GAS_URLが未設定です'); e.target.value=''; return; }
   toast('マスタ解析中…');
-  const text=await file.text();
+  const buf=await file.arrayBuffer();
+  let text;
+  try{ text=new TextDecoder('utf-8',{fatal:true}).decode(buf); }       // UTF-8なら採用
+  catch(_){ try{ text=new TextDecoder('shift_jis').decode(buf); }       // 弥生標準=Shift-JIS
+            catch(__){ text=new TextDecoder().decode(buf); } }
   const rows=parseCSV(text).map(r=>[(r[0]||'').trim(),(r[1]||'').trim(),(r[4]||'').trim()]).filter(r=>r[0]&&r[1]);
   if(!rows.length){ toast('台帳データを読めませんでした'); e.target.value=''; return; }
   toast(`${rows.length}件をGASへ登録中…`);
@@ -422,7 +426,7 @@ $('masterIn').addEventListener('change',async e=>{
     const j=await res.json();
     if(!j.ok)throw new Error(j.error||'ng');
     setMasterStat(`GAS登録済み：${j.count}件`); toast(`商品台帳 ${j.count}件を登録しました`); resolveAll();
-  }catch(err){ toast('GAS登録に失敗（デプロイのアクセス権/URLを確認）'); setMasterStat('GAS登録に失敗'); console.error(err); }
+  }catch(err){ const m=(err&&err.message)||String(err); toast('GAS登録に失敗'); setMasterStat('GAS登録に失敗: '+m); console.error(err); }
   e.target.value='';
 });
 
