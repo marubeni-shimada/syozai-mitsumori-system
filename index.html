@@ -388,36 +388,61 @@ function loadLines(arr){
 }
 $('loadSample').addEventListener('click',()=>loadLines(SAMPLE));
 
-// PDF読込（β：常宏フォーマット向け簡易パーサ）
+// PDF読込（列バンド＋行クラスタ方式。この仕入先テンプレート向け）
 pdfjsLib.GlobalWorkerOptions.workerSrc='https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
 $('pdfIn').addEventListener('change',async e=>{
   const file=e.target.files[0]; if(!file)return; toast('PDF解析中…',true);
   try{
     const buf=await file.arrayBuffer(); const pdf=await pdfjsLib.getDocument({data:buf}).promise;
-    let items=[];
-    for(let p=1;p<=pdf.numPages;p++){ const page=await pdf.getPage(p); const tc=await page.getTextContent();
-      tc.items.forEach(it=>items.push({x:it.transform[4],y:Math.round(it.transform[5]),str:it.str})); }
-    // y座標で行をまとめる
-    const byY={}; items.forEach(it=>{(byY[it.y]=byY[it.y]||[]).push(it);});
-    const lines=Object.keys(byY).map(Number).sort((a,b)=>b-a)
-      .map(y=>byY[y].sort((a,b)=>a.x-b.x).map(o=>o.str).join(' ').replace(/\s+/g,' ').trim())
-      .filter(Boolean);
-    const parsed=parseKojo(lines);
-    if(parsed.length){ loadLines(parsed); toastDone(`明細 ${parsed.filter(r=>r[0]==='item').length} 件を読込`); }
+    let parsed=[];
+    for(let p=1;p<=pdf.numPages;p++){
+      const page=await pdf.getPage(p); const vp=page.getViewport({scale:1});
+      const tc=await page.getTextContent();
+      // pdf.jsは左下原点 → top(上からの距離)に変換してpdfplumberと揃える
+      const words=tc.items.filter(it=>it.str.trim()).map(it=>({
+        x0:it.transform[4], top:vp.height-it.transform[5], text:it.str.trim() }));
+      parsed=parsed.concat(parsePage(words));
+    }
+    if(parsed.some(r=>r[0]==='item')){ loadLines(parsed); toastDone(`明細 ${parsed.filter(r=>r[0]==='item').length} 件を読込`); }
     else toastDone('明細を自動抽出できませんでした。サンプル読込か手入力で。');
   }catch(err){ toastDone('PDF解析に失敗しました'); console.error(err); }
   e.target.value='';
 });
-function parseKojo(lines){
-  const out=[]; const numRe=/([\d,]+)/g;
-  for(const ln of lines){
-    if(/^【.*】/.test(ln)){ out.push(['sec',ln.match(/【.*?】/)[0],'',0,0]); continue; }
-    if(/見積条件|※/.test(ln)){ out.push(['cond',ln,'',0,0]); continue; }
-    // 「… 数量 単位 単価 金額」を末尾から拾う
-    const m=ln.match(/^(?:\d+\s+)?(.+?)\s+(\d+)\s*(組|枚|台|本|個|式|m2?|ｍ3?|kg)\s+([\d,]+)\s+([\d,]+)(?:\s+.*)?$/);
-    if(m){ const name=m[1].trim(), qty=+m[2], unit=m[3], cost=+m[4].replace(/,/g,'');
-      if(name.length>2 && cost>0) out.push(['item',name,unit,qty,cost]); }
+// 近いtopを同一行にまとめる
+function clusterRows(words,tol){ tol=tol||4;
+  const ws=words.slice().sort((a,b)=>a.top-b.top); const rows=[];
+  ws.forEach(w=>{ const last=rows[rows.length-1];
+    if(last && Math.abs(w.top-last.top)<=tol) last.items.push(w);
+    else rows.push({top:w.top,items:[w]}); });
+  return rows;
+}
+function parsePage(words){
+  const out=[]; const rows=clusterRows(words);
+  const band=(toks,a,b)=>toks.filter(w=>w.x0>=a&&w.x0<b).sort((x,y)=>x.x0-y.x0).map(w=>w.text);
+  const info=[]; let started=false;
+  for(const r of rows){
+    const joined=r.items.slice().sort((a,b)=>a.x0-b.x0).map(w=>w.text).join('');
+    if(!started){ if(joined.includes('No.')&&joined.includes('数量'))started=true; info.push(['skip']); continue; }
+    if(joined.includes('合計')||joined.includes('備考:')||/^\d+\/\d+$/.test(joined)){ info.push(['skip']); continue; }
+    let name=band(r.items,55,390).join(' ').trim(); name=name.replace(/\s*(納期|実働).*$/,'').trim();
+    const qty=band(r.items,390,438).filter(t=>/^[\d,]+$/.test(t));
+    const unit=band(r.items,438,475);
+    const price=band(r.items,475,538).filter(t=>/^[\d,]+$/.test(t));
+    const noise = name==='分割になります'||name.startsWith('※')||name.startsWith('(見積条件)')||name.startsWith('（見積条件');
+    if(name.startsWith('【')) info.push(['sec',name]);
+    else if(qty.length&&unit.length&&price.length) info.push(['num',name,unit[0],parseInt(qty[0].replace(/,/g,'')),parseInt(price[0].replace(/,/g,''))]);
+    else if(name&&!noise) info.push(['name',name]);
+    else info.push(['skip']);
   }
+  info.forEach((t,idx)=>{
+    if(t[0]==='sec') out.push(['sec',t[1],'',0,0]);
+    else if(t[0]==='num'){
+      const names=t[1]?[t[1]]:[]; let j=idx-1;
+      while(j>=0&&info[j][0]==='name'&&names.length<3){ names.unshift(info[j][1]); j--; }
+      const full=names.join(' ').replace(/\s+/g,' ').trim();
+      if(full&&t[4]>0) out.push(['item',full,t[2],t[3],t[4]]);
+    }
+  });
   return out;
 }
 
