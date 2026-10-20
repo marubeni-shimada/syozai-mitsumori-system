@@ -73,12 +73,26 @@
   .toast{position:fixed;left:50%;bottom:calc(18px + env(safe-area-inset-bottom,0px));transform:translateX(-50%);background:var(--fg);color:var(--bg);padding:9px 16px;border-radius:8px;font-size:.84rem;opacity:0;transition:opacity .2s;pointer-events:none;z-index:20}
   .toast.show{opacity:1}
   .mono{font-family:var(--mono)}
+  .tabs{display:flex;gap:6px;margin-bottom:18px;flex-wrap:wrap}
+  .tab{flex:1 1 auto;min-width:120px;display:flex;align-items:center;justify-content:center;gap:8px;padding:11px 12px;border:1px solid var(--line);border-radius:10px;background:var(--surface);color:var(--muted);cursor:pointer;font-size:.86rem;font-weight:600}
+  .tab .n{display:inline-flex;align-items:center;justify-content:center;width:22px;height:22px;border-radius:50%;background:var(--head);color:var(--muted);font-size:.76rem;flex:none}
+  .tab.active{border-color:var(--accent);color:var(--fg);background:var(--accent-soft)}
+  .tab.active .n{background:var(--accent);color:#fff}
+  .stepnav{display:flex;justify-content:space-between;gap:10px;margin-top:2px}
+  .stepnav button{min-width:120px}
 </style>
 
 <div class="wrap">
   <h1>見積変換ツール</h1>
   <p class="lead">仕入先の見積 → マージン計算 → 商品台帳の名寄せ → 弥生販売「取引インポート」用CSVを生成。</p>
 
+  <div class="tabs">
+    <button type="button" class="tab" data-t="1"><span class="n">1</span>取り込み</button>
+    <button type="button" class="tab" data-t="2"><span class="n">2</span>金額と品チェック</button>
+    <button type="button" class="tab" data-t="3"><span class="n">3</span>CSV起こす</button>
+  </div>
+
+  <section class="step" id="step1">
   <!-- ① 入力 -->
   <div class="card">
     <h2>① 見積を読み込む</h2>
@@ -89,7 +103,10 @@
     </div>
     <p class="hint">PDF読込は常宏フォーマット向けのβ版です。読み込んだら明細は表で直接直せます。うまく取れない時はサンプル読込や手入力で。</p>
   </div>
+  <div class="stepnav"><span></span><button type="button" data-go="2">次へ：金額と品チェック ▶</button></div>
+  </section>
 
+  <section class="step" id="step2" hidden>
   <!-- ② 設定 -->
   <div class="card">
     <h2>② 見積ヘッダ ＆ マージン</h2>
@@ -134,7 +151,10 @@
       <div class="tc"><div class="k">名寄せ</div><div class="v" id="tMatch">0 / 0</div></div>
     </div>
   </div>
+  <div class="stepnav"><button type="button" class="ghost" data-go="1">◀ 戻る</button><button type="button" data-go="3">次へ：CSV起こす ▶</button></div>
+  </section>
 
+  <section class="step" id="step3" hidden>
   <!-- ⑤ 出力 -->
   <div class="card">
     <h2>⑤ 弥生取込CSVを生成</h2>
@@ -147,6 +167,8 @@
     <pre class="csv" id="csvOut" hidden></pre>
     <p class="hint">取込前に必ず弥生でバックアップを。インポートは取り消せません。得意先コード・見積番号は実在の値に合わせてください。</p>
   </div>
+  <div class="stepnav"><button type="button" class="ghost" data-go="2">◀ 戻る</button><span></span></div>
+  </section>
 </div>
 <div class="toast" id="toast"></div>
 
@@ -362,5 +384,16 @@ $('dlCsv').addEventListener('click',()=>{ const blob=new Blob([buildCsv()],{type
 
 let tt; function toast(m){const t=$('toast');t.textContent=m;t.classList.add('show');clearTimeout(tt);tt=setTimeout(()=>t.classList.remove('show'),1800);}
 
+// タブ切替
+function showStep(n){
+  [1,2,3].forEach(i=>{ $('step'+i).hidden=(i!==n);
+    document.querySelector('.tab[data-t="'+i+'"]').classList.toggle('active',i===n); });
+  if(n===3){ $('csvOut').textContent=buildCsv(); $('csvOut').hidden=false; }
+  window.scrollTo({top:0,behavior:'smooth'});
+}
+document.querySelectorAll('.tab').forEach(t=>t.addEventListener('click',()=>showStep(+t.dataset.t)));
+document.querySelectorAll('[data-go]').forEach(b=>b.addEventListener('click',()=>showStep(+b.dataset.go)));
+
 loadLines(SAMPLE);
+showStep(1);
 </script>
