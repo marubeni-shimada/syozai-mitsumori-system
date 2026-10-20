@@ -37,17 +37,20 @@
   .f input.s{width:110px}.f input.m{width:150px}
   .marginbig{width:88px;font-size:1.3rem;font-weight:700;text-align:right}
   select{padding:7px 9px;border:1px solid var(--line);border-radius:7px;background:var(--bg);color:var(--fg);font:inherit;font-size:.85rem}
-  button{font:inherit;cursor:pointer;border-radius:8px;border:1px solid var(--accent);background:var(--accent);color:#fff;padding:8px 15px;font-size:.86rem;font-weight:600}
-  button.ghost{background:transparent;color:var(--accent)}
+  button{font:inherit;cursor:pointer;border-radius:8px;border:1px solid var(--accent);background:var(--accent);color:#fff;padding:8px 15px;font-size:.86rem;font-weight:600;transition:transform .12s cubic-bezier(.34,1.56,.64,1),box-shadow .2s,background .2s,filter .15s;box-shadow:0 1px 2px rgba(20,40,80,.12)}
+  button:hover{filter:brightness(1.06);box-shadow:0 3px 10px rgba(47,111,176,.28);transform:translateY(-1px)}
+  button.ghost{background:transparent;color:var(--accent);box-shadow:none}
+  button.ghost:hover{background:var(--accent-soft);box-shadow:none}
   button.sm{padding:5px 10px;font-size:.78rem}
-  button:active{transform:translateY(1px)}
+  button:active{transform:translateY(1px) scale(.98);box-shadow:0 1px 2px rgba(20,40,80,.12)}
   .filebtn{position:relative;overflow:hidden;display:inline-block}
   .filebtn input{position:absolute;inset:0;opacity:0;cursor:pointer}
   .hint{font-size:.74rem;color:var(--muted);margin:8px 0 0}
-  .tag{display:inline-block;font-size:.68rem;padding:1px 7px;border-radius:999px;font-weight:700;letter-spacing:.02em}
+  .tag{display:inline-block;font-size:.68rem;padding:1px 7px;border-radius:999px;font-weight:700;letter-spacing:.02em;animation:pop .28s cubic-bezier(.34,1.56,.64,1)}
   .tag.ok{background:var(--sell-soft);color:var(--sell)}
   .tag.chk{background:var(--warn-soft);color:var(--warn)}
   .tag.new{background:var(--new-soft);color:var(--new)}
+  @keyframes pop{from{transform:scale(.6);opacity:0}to{transform:scale(1);opacity:1}}
 
   .tablewrap{overflow-x:auto;border:1px solid var(--line);border-radius:10px}
   table{width:100%;border-collapse:collapse;font-size:.83rem;min-width:860px;font-variant-numeric:tabular-nums}
@@ -70,14 +73,40 @@
   .tc.sell .v{color:var(--sell)}
   .tc .yen{font-size:.82rem;margin-right:1px}.tc .pr{font-size:.74rem;color:var(--muted)}
   pre.csv{background:var(--bg);border:1px solid var(--line);border-radius:8px;padding:11px;overflow-x:auto;font-family:var(--mono);font-size:.72rem;max-height:220px;white-space:pre}
-  .toast{position:fixed;left:50%;bottom:calc(18px + env(safe-area-inset-bottom,0px));transform:translateX(-50%);background:var(--fg);color:var(--bg);padding:9px 16px;border-radius:8px;font-size:.84rem;opacity:0;transition:opacity .2s;pointer-events:none;z-index:20}
-  .toast.show{opacity:1}
+  .toast{position:fixed;left:50%;bottom:calc(18px + env(safe-area-inset-bottom,0px));transform:translateX(-50%) translateY(12px);background:var(--fg);color:var(--bg);padding:10px 18px;border-radius:10px;font-size:.84rem;opacity:0;transition:opacity .25s,transform .3s cubic-bezier(.34,1.56,.64,1);pointer-events:none;z-index:30;box-shadow:0 6px 24px rgba(0,0,0,.25);display:flex;align-items:center;gap:8px}
+  .toast.show{opacity:1;transform:translateX(-50%) translateY(0)}
   .mono{font-family:var(--mono)}
+  /* スピナー */
+  .spin{display:inline-block;width:14px;height:14px;border:2px solid currentColor;border-right-color:transparent;border-radius:50%;animation:rot .6s linear infinite;vertical-align:-2px}
+  @keyframes rot{to{transform:rotate(360deg)}}
+  /* ステップ切替 */
+  .step.anim-fwd{animation:stepIn .34s cubic-bezier(.22,.9,.3,1)}
+  @keyframes stepIn{from{opacity:0;transform:translateX(16px)}to{opacity:1;transform:translateX(0)}}
+  .step.anim-back{animation:stepInBack .34s cubic-bezier(.22,.9,.3,1)}
+  @keyframes stepInBack{from{opacity:0;transform:translateX(-16px)}to{opacity:1;transform:translateX(0)}}
+  /* カード登場 */
+  .step .card{animation:cardIn .4s both cubic-bezier(.22,.9,.3,1)}
+  .step .card:nth-child(2){animation-delay:.05s}
+  .step .card:nth-child(3){animation-delay:.1s}
+  @keyframes cardIn{from{opacity:0;transform:translateY(10px)}to{opacity:1;transform:translateY(0)}}
+  /* 明細行の登場（stagger） */
+  tbody tr.enter{animation:rowIn .32s both cubic-bezier(.22,.9,.3,1)}
+  @keyframes rowIn{from{opacity:0;transform:translateY(-6px)}to{opacity:1;transform:translateY(0)}}
+  tbody tr{transition:background .4s}
+  td.sell{transition:background .4s}
+  /* 数値更新のパルス */
+  .flash{animation:flash .6s ease}
+  @keyframes flash{0%{background:var(--accent-soft)}100%{background:transparent}}
+  .tc .v.bump{animation:bump .4s cubic-bezier(.34,1.56,.64,1)}
+  @keyframes bump{0%{transform:scale(1)}40%{transform:scale(1.12)}100%{transform:scale(1)}}
+  @media (prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important}}
   .tabs{display:flex;gap:6px;margin-bottom:18px;flex-wrap:wrap}
-  .tab{flex:1 1 auto;min-width:120px;display:flex;align-items:center;justify-content:center;gap:8px;padding:11px 12px;border:1px solid var(--line);border-radius:10px;background:var(--surface);color:var(--muted);cursor:pointer;font-size:.86rem;font-weight:600}
-  .tab .n{display:inline-flex;align-items:center;justify-content:center;width:22px;height:22px;border-radius:50%;background:var(--head);color:var(--muted);font-size:.76rem;flex:none}
-  .tab.active{border-color:var(--accent);color:var(--fg);background:var(--accent-soft)}
-  .tab.active .n{background:var(--accent);color:#fff}
+  .tab{flex:1 1 auto;min-width:120px;display:flex;align-items:center;justify-content:center;gap:8px;padding:11px 12px;border:1px solid var(--line);border-radius:10px;background:var(--surface);color:var(--muted);cursor:pointer;font-size:.86rem;font-weight:600;transition:border-color .2s,background .25s,color .2s,box-shadow .2s;box-shadow:none}
+  .tab:hover{border-color:var(--accent);color:var(--fg)}
+  .tab .n{display:inline-flex;align-items:center;justify-content:center;width:22px;height:22px;border-radius:50%;background:var(--head);color:var(--muted);font-size:.76rem;flex:none;transition:background .25s,color .25s,transform .3s cubic-bezier(.34,1.56,.64,1)}
+  .tab.active{border-color:var(--accent);color:var(--fg);background:var(--accent-soft);box-shadow:0 2px 10px rgba(47,111,176,.18)}
+  .tab.active .n{background:var(--accent);color:#fff;transform:scale(1.12)}
+  .tab.done .n{background:var(--sell);color:#fff}
   .stepnav{display:flex;justify-content:space-between;gap:10px;margin-top:2px}
   .stepnav button{min-width:120px}
 </style>
@@ -229,10 +258,10 @@ function applyResult(l,r){ l.cand=r.cand||[]; l.verdict=r.verdict||'new'; l.code
 function setMasterStat(t){ const e=$('masterStat'); if(e)e.textContent=t; }
 async function resolveAll(){
   const items=LINES.filter(l=>l.kind==='item'); if(!items.length)return;
-  if(GAS_URL){ try{ const j=await gasMatch(items.map(l=>({name:l.name,unit:l.unit})));
+  if(GAS_URL){ try{ toast('名寄せ中…',true); const j=await gasMatch(items.map(l=>({name:l.name,unit:l.unit})));
       items.forEach((l,i)=>applyResult(l,j.results[i])); render();
-      setMasterStat(`GAS接続：${j.masterCount}件`); toast(`名寄せ：全件マスタ（GAS ${j.masterCount}件）`); return; }
-    catch(e){ setMasterStat('GAS接続不可：内蔵マスタ使用中'); toast('GAS接続不可：内蔵マスタで名寄せ'); } }
+      setMasterStat(`GAS接続：${j.masterCount}件`); toastDone(`名寄せ：全件マスタ（GAS ${j.masterCount}件）`); return; }
+    catch(e){ setMasterStat('GAS接続不可：内蔵マスタ使用中'); toastDone('GAS接続不可：内蔵マスタで名寄せ'); } }
   items.forEach(l=>applyResult(l,matchTop(l.name,l.unit))); render();
 }
 // CSV解析（ダブルクオート対応）
@@ -260,12 +289,14 @@ function roundSell(cost,margin){
 function recalcMatch(l){ if(l.kind!=='item'){return;} const r=matchTop(l.name,l.unit); l.cand=r.cand; l.verdict=r.verdict;
   l.code = r.verdict==='new' ? '' : (r.cand[0]?r.cand[0].code:''); }
 
-function render(){
+function render(animate){
   const tb=$('rows'); tb.innerHTML='';
   let tc=0,ts=0,ni=0,nm=0,newList=[];
   LINES.forEach((l,i)=>{
     const tr=document.createElement('tr');
+    if(animate){ tr.classList.add('enter'); tr.style.animationDelay=(i*0.035)+'s'; }
     if(l.kind==='sec'){ tr.className='sec';
+      if(animate){ tr.classList.add('enter'); tr.style.animationDelay=(i*0.035)+'s'; }
       tr.innerHTML=`<td>摘要</td><td class="l" colspan="7"><input class="celled" data-i="${i}" data-k="name" value="${esc(l.name)}"></td><td></td><td><button class="delrow" data-del="${i}">×</button></td>`;
       tb.appendChild(tr); return; }
     ni++;
@@ -286,24 +317,27 @@ function render(){
       `<td><button class="delrow" data-del="${i}">×</button></td>`;
     tb.appendChild(tr);
   });
-  $('tCost').textContent=yen(tc); $('tSell').textContent=yen(ts);
-  const p=ts-tc; $('tProfit').textContent=yen(p); $('tRate').textContent=ts>0?`（${(p/ts*100).toFixed(1)}%）`:'';
-  $('tMatch').textContent=`${nm} / ${ni} 品`;
-  $('newWarn').textContent = newList.length?`新規登録が必要: ${newList.length}品（登録用CSVは別途生成できます）`:'';
+  setTotals(tc,ts,nm,ni,newList);
 }
+function setTotals(tc,ts,nm,ni,newList){
+  bumpSet('tCost',yen(tc)); bumpSet('tSell',yen(ts));
+  const p=ts-tc; bumpSet('tProfit',yen(p)); $('tRate').textContent=ts>0?`（${(p/ts*100).toFixed(1)}%）`:'';
+  $('tMatch').textContent=`${nm} / ${ni} 品`;
+  $('newWarn').textContent=newList.length?`新規登録が必要: ${newList.length}品（登録用CSVは別途生成できます）`:'';
+}
+function bumpSet(id,val){ const e=$(id); if(!e)return; if(e.textContent!==val){ e.textContent=val;
+  e.classList.remove('bump'); void e.offsetWidth; e.classList.add('bump'); } }
 // 入力中は表を作り直さず（フォーカス保持）、計算値だけ更新
 function recompute(){
   let tc=0,ts=0,ni=0,nm=0,newList=[];
   LINES.forEach((l,i)=>{ if(l.kind!=='item')return; ni++;
     const sell=roundSell(l.cost,l.margin),amt=sell*l.qty; tc+=l.cost*l.qty; ts+=amt;
     const se=document.querySelector(`[data-sell="${i}"]`),ae=document.querySelector(`[data-amt="${i}"]`);
-    if(se)se.textContent=yen(sell); if(ae)ae.textContent=yen(amt);
+    if(se&&se.textContent!==yen(sell)){se.textContent=yen(sell);flashCell(se);} if(ae)ae.textContent=yen(amt);
     if(l.verdict==='new')newList.push(l.name); else if(l.code)nm++; });
-  $('tCost').textContent=yen(tc);$('tSell').textContent=yen(ts);
-  const p=ts-tc;$('tProfit').textContent=yen(p);$('tRate').textContent=ts>0?`（${(p/ts*100).toFixed(1)}%）`:'';
-  $('tMatch').textContent=`${nm} / ${ni} 品`;
-  $('newWarn').textContent=newList.length?`新規登録が必要: ${newList.length}品（登録用CSVは別途生成できます）`:'';
+  setTotals(tc,ts,nm,ni,newList);
 }
+function flashCell(el){ el.classList.remove('flash'); void el.offsetWidth; el.classList.add('flash'); }
 const esc=s=>(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
 
 // 入力ハンドラ
@@ -350,14 +384,14 @@ function loadLines(arr){
   LINES=arr.map(([kind,name,unit,qty,cost])=>{
     const l={kind:kind==='item'?'item':'sec',name,qty:qty||0,unit:unit||'',cost:cost||0,margin:g,code:'',cand:[],verdict:'new'};
     if(l.kind==='item')recalcMatch(l); return l;});
-  render(); resolveAll();
+  render(true); resolveAll();
 }
 $('loadSample').addEventListener('click',()=>loadLines(SAMPLE));
 
 // PDF読込（β：常宏フォーマット向け簡易パーサ）
 pdfjsLib.GlobalWorkerOptions.workerSrc='https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
 $('pdfIn').addEventListener('change',async e=>{
-  const file=e.target.files[0]; if(!file)return; toast('PDF解析中…');
+  const file=e.target.files[0]; if(!file)return; toast('PDF解析中…',true);
   try{
     const buf=await file.arrayBuffer(); const pdf=await pdfjsLib.getDocument({data:buf}).promise;
     let items=[];
@@ -369,9 +403,9 @@ $('pdfIn').addEventListener('change',async e=>{
       .map(y=>byY[y].sort((a,b)=>a.x-b.x).map(o=>o.str).join(' ').replace(/\s+/g,' ').trim())
       .filter(Boolean);
     const parsed=parseKojo(lines);
-    if(parsed.length){ loadLines(parsed); toast(`明細 ${parsed.filter(r=>r[0]==='item').length} 件を読込`); }
-    else toast('明細を自動抽出できませんでした。サンプル読込か手入力で。');
-  }catch(err){ toast('PDF解析に失敗しました'); console.error(err); }
+    if(parsed.length){ loadLines(parsed); toastDone(`明細 ${parsed.filter(r=>r[0]==='item').length} 件を読込`); }
+    else toastDone('明細を自動抽出できませんでした。サンプル読込か手入力で。');
+  }catch(err){ toastDone('PDF解析に失敗しました'); console.error(err); }
   e.target.value='';
 });
 function parseKojo(lines){
@@ -406,7 +440,8 @@ $('copyCsv').addEventListener('click',async()=>{ const t=buildCsv(); try{await n
 $('dlCsv').addEventListener('click',()=>{ const blob=new Blob([buildCsv()],{type:'text/csv'}); const a=document.createElement('a');
   a.href=URL.createObjectURL(blob); a.download=`yayoi_mitsumori_${$('hNo').value||'out'}.txt`; a.click(); setTimeout(()=>URL.revokeObjectURL(a.href),1000); toast('ダウンロード（公開ページで有効）'); });
 
-let tt; function toast(m){const t=$('toast');t.textContent=m;t.classList.add('show');clearTimeout(tt);tt=setTimeout(()=>t.classList.remove('show'),1800);}
+let tt; function toast(m,busy){const t=$('toast');t.innerHTML=(busy?'<span class="spin"></span>':'')+esc(m);t.classList.add('show');clearTimeout(tt);if(!busy)tt=setTimeout(()=>t.classList.remove('show'),1800);}
+function toastDone(m){clearTimeout(tt);const t=$('toast');t.innerHTML=esc(m);t.classList.add('show');tt=setTimeout(()=>t.classList.remove('show'),1800);}
 
 // 商品台帳マスタをGASへ登録
 $('masterIn').addEventListener('change',async e=>{
@@ -419,22 +454,32 @@ $('masterIn').addEventListener('change',async e=>{
   catch(_){ try{ text=new TextDecoder('shift_jis').decode(buf); }       // 弥生標準=Shift-JIS
             catch(__){ text=new TextDecoder().decode(buf); } }
   const rows=parseCSV(text).map(r=>[(r[0]||'').trim(),(r[1]||'').trim(),(r[4]||'').trim()]).filter(r=>r[0]&&r[1]);
-  if(!rows.length){ toast('台帳データを読めませんでした'); e.target.value=''; return; }
-  toast(`${rows.length}件をGASへ登録中…`);
+  if(!rows.length){ toastDone('台帳データを読めませんでした'); e.target.value=''; return; }
+  toast(`${rows.length}件をGASへ登録中…`,true);
   try{
     const res=await fetch(GAS_URL,{method:'POST',headers:{'Content-Type':'text/plain;charset=utf-8'},body:JSON.stringify({action:'setMaster',rows})});
     const j=await res.json();
     if(!j.ok)throw new Error(j.error||'ng');
-    setMasterStat(`GAS登録済み：${j.count}件`); toast(`商品台帳 ${j.count}件を登録しました`); resolveAll();
-  }catch(err){ const m=(err&&err.message)||String(err); toast('GAS登録に失敗'); setMasterStat('GAS登録に失敗: '+m); console.error(err); }
+    setMasterStat(`GAS登録済み：${j.count}件`); toastDone(`商品台帳 ${j.count}件を登録しました`); resolveAll();
+  }catch(err){ const m=(err&&err.message)||String(err); toastDone('GAS登録に失敗'); setMasterStat('GAS登録に失敗: '+m); console.error(err); }
   e.target.value='';
 });
 
-// タブ切替
+// タブ切替（方向つきアニメーション＋到達済みマーク）
+let curStep=1;
 function showStep(n){
-  [1,2,3].forEach(i=>{ $('step'+i).hidden=(i!==n);
-    document.querySelector('.tab[data-t="'+i+'"]').classList.toggle('active',i===n); });
+  const back = n<curStep;
+  [1,2,3].forEach(i=>{
+    const sec=$('step'+i), tab=document.querySelector('.tab[data-t="'+i+'"]');
+    sec.hidden=(i!==n);
+    tab.classList.toggle('active',i===n);
+    tab.classList.toggle('done', i<n);   // 通過済みタブは緑チェック色
+  });
+  const sec=$('step'+n);
+  sec.classList.remove('anim-fwd','anim-back'); void sec.offsetWidth;
+  sec.classList.add(back?'anim-back':'anim-fwd');
   if(n===3){ $('csvOut').textContent=buildCsv(); $('csvOut').hidden=false; }
+  curStep=n;
   window.scrollTo({top:0,behavior:'smooth'});
 }
 document.querySelectorAll('.tab').forEach(t=>t.addEventListener('click',()=>showStep(+t.dataset.t)));
