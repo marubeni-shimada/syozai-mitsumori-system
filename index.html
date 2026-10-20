@@ -186,6 +186,21 @@ function matchTop(name,unit,k=5){
   return {cand:sc,verdict};
 }
 
+// ===== GAS接続（全8,436件で名寄せ。未設定/失敗時は内蔵マスタにフォールバック） =====
+const GAS_URL='https://script.google.com/macros/s/AKfycby4Xqwksp7osHEPhEGYEVsjElJFBduHKTo85erBJSN8j9p3p6C8pPb9mJlNzZ4euv6B/exec';
+async function gasMatch(items){
+  const r=await fetch(GAS_URL,{method:'POST',headers:{'Content-Type':'text/plain;charset=utf-8'},body:JSON.stringify({lines:items})});
+  const j=await r.json(); if(!j||!j.ok)throw new Error('gas'); return j.results;
+}
+function applyResult(l,r){ l.cand=r.cand||[]; l.verdict=r.verdict||'new'; l.code=(l.verdict==='new')?'':(l.cand[0]?l.cand[0].code:''); }
+async function resolveAll(){
+  const items=LINES.filter(l=>l.kind==='item'); if(!items.length)return;
+  if(GAS_URL){ try{ const rs=await gasMatch(items.map(l=>({name:l.name,unit:l.unit})));
+      items.forEach((l,i)=>applyResult(l,rs[i])); render(); toast('名寄せ：全件マスタ（GAS）'); return; }
+    catch(e){ toast('GAS接続不可：内蔵マスタで名寄せ'); } }
+  items.forEach(l=>applyResult(l,matchTop(l.name,l.unit))); render();
+}
+
 // ===== 明細モデル =====
 let LINES=[]; // {kind:'item'|'sec', name, qty, unit, cost, margin, code, cand, verdict}
 const yen=n=>Math.round(n||0).toLocaleString('ja-JP');
@@ -220,7 +235,7 @@ function render(){
       `<td><input class="celled" style="width:48px" data-i="${i}" data-k="unit" value="${esc(l.unit)}"></td>`+
       `<td><input class="celled" style="width:72px" data-i="${i}" data-k="cost" value="${l.cost}"></td>`+
       `<td><input class="celled" style="width:48px" data-i="${i}" data-k="margin" value="${l.margin}"></td>`+
-      `<td class="sell">${yen(sell)}</td><td class="sell">${yen(amt)}</td>`+
+      `<td class="sell" data-sell="${i}">${yen(sell)}</td><td class="sell" data-amt="${i}">${yen(amt)}</td>`+
       `<td class="l">${tag} <select class="matchsel" data-code="${i}">${opts}</select></td>`+
       `<td><button class="delrow" data-del="${i}">×</button></td>`;
     tb.appendChild(tr);
@@ -230,6 +245,19 @@ function render(){
   $('tMatch').textContent=`${nm} / ${ni} 品`;
   $('newWarn').textContent = newList.length?`新規登録が必要: ${newList.length}品（登録用CSVは別途生成できます）`:'';
 }
+// 入力中は表を作り直さず（フォーカス保持）、計算値だけ更新
+function recompute(){
+  let tc=0,ts=0,ni=0,nm=0,newList=[];
+  LINES.forEach((l,i)=>{ if(l.kind!=='item')return; ni++;
+    const sell=roundSell(l.cost,l.margin),amt=sell*l.qty; tc+=l.cost*l.qty; ts+=amt;
+    const se=document.querySelector(`[data-sell="${i}"]`),ae=document.querySelector(`[data-amt="${i}"]`);
+    if(se)se.textContent=yen(sell); if(ae)ae.textContent=yen(amt);
+    if(l.verdict==='new')newList.push(l.name); else if(l.code)nm++; });
+  $('tCost').textContent=yen(tc);$('tSell').textContent=yen(ts);
+  const p=ts-tc;$('tProfit').textContent=yen(p);$('tRate').textContent=ts>0?`（${(p/ts*100).toFixed(1)}%）`:'';
+  $('tMatch').textContent=`${nm} / ${ni} 品`;
+  $('newWarn').textContent=newList.length?`新規登録が必要: ${newList.length}品（登録用CSVは別途生成できます）`:'';
+}
 const esc=s=>(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
 
 // 入力ハンドラ
@@ -237,13 +265,14 @@ $('rows').addEventListener('input',e=>{
   const el=e.target;
   if(el.classList.contains('celled')){
     const i=+el.dataset.i,k=el.dataset.k,l=LINES[i];
-    if(k==='qty'||k==='cost'||k==='margin'){l[k]=parseFloat(el.value)||0;}
-    else{l[k]=el.value; if(k==='name')recalcMatch(l);}
-    render();
+    if(k==='qty'||k==='cost'||k==='margin'){l[k]=parseFloat(el.value)||0; recompute();}
+    else{l[k]=el.value;}
   }
 });
 $('rows').addEventListener('change',e=>{
-  if(e.target.classList.contains('matchsel')){ const i=+e.target.dataset.code; LINES[i].code=e.target.value; render(); }
+  const el=e.target;
+  if(el.classList.contains('matchsel')){ const i=+el.dataset.code; LINES[i].code=el.value; recompute(); }
+  else if(el.classList.contains('celled') && (el.dataset.k==='name'||el.dataset.k==='unit')){ resolveAll(); }
 });
 $('rows').addEventListener('click',e=>{
   if(e.target.dataset.del!==undefined){ LINES.splice(+e.target.dataset.del,1); render(); }
@@ -275,7 +304,7 @@ function loadLines(arr){
   LINES=arr.map(([kind,name,unit,qty,cost])=>{
     const l={kind:kind==='item'?'item':'sec',name,qty:qty||0,unit:unit||'',cost:cost||0,margin:g,code:'',cand:[],verdict:'new'};
     if(l.kind==='item')recalcMatch(l); return l;});
-  render();
+  render(); resolveAll();
 }
 $('loadSample').addEventListener('click',()=>loadLines(SAMPLE));
 
