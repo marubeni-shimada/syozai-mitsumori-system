@@ -103,6 +103,17 @@
     </div>
     <p class="hint">PDF読込は常宏フォーマット向けのβ版です。読み込んだら明細は表で直接直せます。うまく取れない時はサンプル読込や手入力で。</p>
   </div>
+
+  <!-- 商品台帳マスタ登録 -->
+  <div class="card">
+    <h2>商品台帳マスタ（GAS）</h2>
+    <div class="row">
+      <span class="filebtn"><button type="button">マスタ取り込み（GASへ登録）</button><input type="file" id="masterIn" accept=".txt,.csv"></span>
+      <span class="hint" id="masterStat">内蔵マスタ使用中（グレーチング705件）</span>
+    </div>
+    <p class="hint">弥生でエクスポートした商品台帳CSV（A列コード・B列商品名・E列単位）をアップロードすると、GASのスプレッドシート「商品台帳」に自動登録します。登録後は全件で名寄せします。</p>
+  </div>
+
   <div class="stepnav"><span></span><button type="button" data-go="2">次へ：金額と品チェック ▶</button></div>
   </section>
 
@@ -212,15 +223,28 @@ function matchTop(name,unit,k=5){
 const GAS_URL='https://script.google.com/macros/s/AKfycby4Xqwksp7osHEPhEGYEVsjElJFBduHKTo85erBJSN8j9p3p6C8pPb9mJlNzZ4euv6B/exec';
 async function gasMatch(items){
   const r=await fetch(GAS_URL,{method:'POST',headers:{'Content-Type':'text/plain;charset=utf-8'},body:JSON.stringify({lines:items})});
-  const j=await r.json(); if(!j||!j.ok)throw new Error('gas'); return j.results;
+  const j=await r.json(); if(!j||!j.ok)throw new Error('gas'); return j;
 }
 function applyResult(l,r){ l.cand=r.cand||[]; l.verdict=r.verdict||'new'; l.code=(l.verdict==='new')?'':(l.cand[0]?l.cand[0].code:''); }
+function setMasterStat(t){ const e=$('masterStat'); if(e)e.textContent=t; }
 async function resolveAll(){
   const items=LINES.filter(l=>l.kind==='item'); if(!items.length)return;
-  if(GAS_URL){ try{ const rs=await gasMatch(items.map(l=>({name:l.name,unit:l.unit})));
-      items.forEach((l,i)=>applyResult(l,rs[i])); render(); toast('名寄せ：全件マスタ（GAS）'); return; }
-    catch(e){ toast('GAS接続不可：内蔵マスタで名寄せ'); } }
+  if(GAS_URL){ try{ const j=await gasMatch(items.map(l=>({name:l.name,unit:l.unit})));
+      items.forEach((l,i)=>applyResult(l,j.results[i])); render();
+      setMasterStat(`GAS接続：${j.masterCount}件`); toast(`名寄せ：全件マスタ（GAS ${j.masterCount}件）`); return; }
+    catch(e){ setMasterStat('GAS接続不可：内蔵マスタ使用中'); toast('GAS接続不可：内蔵マスタで名寄せ'); } }
   items.forEach(l=>applyResult(l,matchTop(l.name,l.unit))); render();
+}
+// CSV解析（ダブルクオート対応）
+function parseCSV(text){
+  const rows=[]; let f='',row=[],q=false;
+  for(let i=0;i<text.length;i++){ const c=text[i];
+    if(q){ if(c==='"'){ if(text[i+1]==='"'){f+='"';i++;} else q=false; } else f+=c; }
+    else{ if(c==='"')q=true; else if(c===','){row.push(f);f='';}
+      else if(c==='\n'){row.push(f);rows.push(row);row=[];f='';}
+      else if(c!=='\r')f+=c; } }
+  if(f.length||row.length){row.push(f);rows.push(row);}
+  return rows;
 }
 
 // ===== 明細モデル =====
@@ -383,6 +407,24 @@ $('dlCsv').addEventListener('click',()=>{ const blob=new Blob([buildCsv()],{type
   a.href=URL.createObjectURL(blob); a.download=`yayoi_mitsumori_${$('hNo').value||'out'}.txt`; a.click(); setTimeout(()=>URL.revokeObjectURL(a.href),1000); toast('ダウンロード（公開ページで有効）'); });
 
 let tt; function toast(m){const t=$('toast');t.textContent=m;t.classList.add('show');clearTimeout(tt);tt=setTimeout(()=>t.classList.remove('show'),1800);}
+
+// 商品台帳マスタをGASへ登録
+$('masterIn').addEventListener('change',async e=>{
+  const file=e.target.files[0]; if(!file)return;
+  if(!GAS_URL){ toast('GAS_URLが未設定です'); e.target.value=''; return; }
+  toast('マスタ解析中…');
+  const text=await file.text();
+  const rows=parseCSV(text).map(r=>[(r[0]||'').trim(),(r[1]||'').trim(),(r[4]||'').trim()]).filter(r=>r[0]&&r[1]);
+  if(!rows.length){ toast('台帳データを読めませんでした'); e.target.value=''; return; }
+  toast(`${rows.length}件をGASへ登録中…`);
+  try{
+    const res=await fetch(GAS_URL,{method:'POST',headers:{'Content-Type':'text/plain;charset=utf-8'},body:JSON.stringify({action:'setMaster',rows})});
+    const j=await res.json();
+    if(!j.ok)throw new Error(j.error||'ng');
+    setMasterStat(`GAS登録済み：${j.count}件`); toast(`商品台帳 ${j.count}件を登録しました`); resolveAll();
+  }catch(err){ toast('GAS登録に失敗（デプロイのアクセス権/URLを確認）'); setMasterStat('GAS登録に失敗'); console.error(err); }
+  e.target.value='';
+});
 
 // タブ切替
 function showStep(n){
