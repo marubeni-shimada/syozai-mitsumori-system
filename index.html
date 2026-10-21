@@ -123,6 +123,13 @@
   .draftrow .dn{font-weight:600;font-size:.88rem;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
   .draftrow .dt{font-size:.72rem;color:var(--muted);white-space:nowrap}
   .draftrow .ddel{border:1px solid var(--line);background:transparent;color:var(--muted);padding:2px 8px;font-size:.78rem;box-shadow:none}
+  .numctl{display:flex;align-items:center;gap:4px}
+  .numctl .ncol{width:64px;text-align:center;padding:6px;border:1px solid var(--line);border-radius:6px;background:var(--bg);color:var(--fg);font:inherit;font-variant-numeric:tabular-nums}
+  .numctl .nbtn{width:30px;padding:6px 0;background:var(--surface);color:var(--accent);border:1px solid var(--line);box-shadow:none;font-weight:700}
+  .numctl .nbtn:hover{background:var(--accent-soft);box-shadow:none;transform:none}
+  .guide-grab{position:absolute;top:0;width:18px;margin-left:-9px;cursor:ew-resize;pointer-events:auto}
+  .guide-line{position:absolute;top:0;left:8px;width:2px}
+  .guide-tag{position:absolute;top:2px;left:-2px;font-size:10px;font-weight:700;color:#fff;padding:1px 4px;border-radius:4px;white-space:nowrap}
   ol.steps{margin:0;padding-left:0;list-style:none;counter-reset:st;display:flex;flex-direction:column;gap:10px}
   ol.steps li{counter-increment:st;position:relative;padding-left:34px;font-size:.88rem;line-height:1.55}
   ol.steps li::before{content:counter(st);position:absolute;left:0;top:0;width:23px;height:23px;border-radius:50%;background:var(--accent);color:#fff;font-size:.76rem;font-weight:700;display:flex;align-items:center;justify-content:center}
@@ -308,7 +315,7 @@
   <section class="step" id="step4" hidden>
     <div class="card">
       <h2>仕入先の書式を登録</h2>
-      <p class="hint" style="margin-top:0">見積PDFを読み込むと、列（品名・数量・単位・単価・金額）を自動で推測します。色の境界線をドラッグで微調整し、会社名を付けて保存してください。次回からその会社を選ぶと正確に読み込めます。</p>
+      <p class="hint" style="margin-top:0">見積PDFを読み込むと列（品名・数量・単位・単価・金額）を自動で推測します。ズレていたら、下の数値入力で微調整するか、PDF上の線をドラッグしてください。会社名を付けて保存すると、次回からそのPDFを自動判別して読みます。</p>
       <div class="row" style="margin-top:10px">
         <div class="f"><label>会社名（仕入先）</label><input class="m" id="fmtName" placeholder="例：常宏"></div>
         <span class="filebtn"><button type="button">見積PDFを読み込む</button><input type="file" id="fmtPdf" accept="application/pdf"></span>
@@ -316,11 +323,18 @@
       </div>
       <p class="hint" id="fmtMsg"></p>
       <div id="fmtStage" hidden style="margin-top:12px">
-        <div style="position:relative;overflow:auto;border:1px solid var(--line);border-radius:8px;max-height:60vh">
+        <div class="row" id="fmtNums" style="gap:10px 14px;margin-bottom:10px">
+          <div class="f"><label><span style="color:#6a7383">●</span> 品名の左端</label><div class="numctl"><button type="button" class="nbtn" data-nk="name0" data-d="-5">−</button><input class="ncol" data-nk="name0" type="number"><button type="button" class="nbtn" data-nk="name0" data-d="5">＋</button></div></div>
+          <div class="f"><label><span style="color:#2f6fb0">●</span> 数量の左端</label><div class="numctl"><button type="button" class="nbtn" data-nk="qty0" data-d="-5">−</button><input class="ncol" data-nk="qty0" type="number"><button type="button" class="nbtn" data-nk="qty0" data-d="5">＋</button></div></div>
+          <div class="f"><label><span style="color:#9a5b00">●</span> 単位の左端</label><div class="numctl"><button type="button" class="nbtn" data-nk="unit0" data-d="-5">−</button><input class="ncol" data-nk="unit0" type="number"><button type="button" class="nbtn" data-nk="unit0" data-d="5">＋</button></div></div>
+          <div class="f"><label><span style="color:#0d6a49">●</span> 単価の左端</label><div class="numctl"><button type="button" class="nbtn" data-nk="price0" data-d="-5">−</button><input class="ncol" data-nk="price0" type="number"><button type="button" class="nbtn" data-nk="price0" data-d="5">＋</button></div></div>
+          <div class="f"><label><span style="color:#b23b3b">●</span> 金額の左端</label><div class="numctl"><button type="button" class="nbtn" data-nk="amount0" data-d="-5">−</button><input class="ncol" data-nk="amount0" type="number"><button type="button" class="nbtn" data-nk="amount0" data-d="5">＋</button></div></div>
+        </div>
+        <div style="position:relative;overflow:auto;border:1px solid var(--line);border-radius:8px;max-height:55vh">
           <canvas id="fmtCanvas" style="display:block"></canvas>
           <div id="fmtGuides" style="position:absolute;top:0;left:0;right:0;bottom:0;pointer-events:none"></div>
         </div>
-        <p class="hint">境界線：<span style="color:#2f6fb0">■</span>品名↔数量　<span style="color:#9a5b00">■</span>数量↔単位　<span style="color:#0d6a49">■</span>単位↔単価　<span style="color:#b23b3b">■</span>単価↔金額（ドラッグで移動）</p>
+        <p class="hint">PDF上の線は、ラベルのところを掴んで左右にドラッグできます。数字の「−／＋」でも微調整できます。</p>
       </div>
       <div id="fmtPreview" hidden>
         <h2 style="margin-top:16px">抽出プレビュー（この境界での結果）</h2>
@@ -926,18 +940,24 @@ async function fmtLoadPdf(file){
   fmtWords=tc.items.filter(it=>it.str.trim()).map(it=>({x0:it.transform[4],top:base.height-it.transform[5],text:it.str.trim()}));
   fmtCols=Object.assign({},detectCols(fmtWords)||DEFAULT_COLS);
   $('fmtStage').hidden=false; $('fmtPreview').hidden=false;
-  $('fmtMsg').textContent=detectCols(fmtWords)?'列を自動推測しました。境界線をドラッグで微調整できます。':'自動推測できなかったので既定値です。境界線を調整してください。';
-  drawGuides(); fmtPreview();
+  $('fmtMsg').textContent=detectCols(fmtWords)?'列を自動推測しました。ズレていたら数値か線で微調整してください。':'自動推測できなかったので既定値です。数値か線で調整してください。';
+  drawGuides(); syncNums(); fmtPreview();
 }
-const GUIDE=[['name0','#6a7383'],['qty0','#2f6fb0'],['unit0','#9a5b00'],['price0','#0d6a49'],['amount0','#b23b3b']];
+const GUIDE=[['name0','#6a7383','品名'],['qty0','#2f6fb0','数量'],['unit0','#9a5b00','単位'],['price0','#0d6a49','単価'],['amount0','#b23b3b','金額']];
 function drawGuides(){
   const g=$('fmtGuides'); const h=$('fmtCanvas').height; g.innerHTML='';
-  GUIDE.forEach(([k,color])=>{
-    const d=document.createElement('div'); d.dataset.k=k;
-    d.style.cssText=`position:absolute;top:0;height:${h}px;width:3px;background:${color};left:${fmtCols[k]*fmtScale}px;cursor:ew-resize;pointer-events:auto;opacity:.8`;
-    g.appendChild(d);
+  GUIDE.forEach(([k,color,label],idx)=>{
+    const grab=document.createElement('div'); grab.className='guide-grab'; grab.dataset.k=k;
+    grab.style.left=(fmtCols[k]*fmtScale)+'px'; grab.style.height=h+'px';
+    const line=document.createElement('div'); line.className='guide-line'; line.style.height=h+'px'; line.style.background=color;
+    const tag=document.createElement('div'); tag.className='guide-tag'; tag.style.background=color; tag.textContent=label;
+    tag.style.top=(2+idx*16)+'px';   // ラベルを縦にずらして重なり回避
+    grab.appendChild(line); grab.appendChild(tag);
+    g.appendChild(grab);
   });
 }
+function syncNums(){ document.querySelectorAll('.ncol').forEach(inp=>{ inp.value=fmtCols[inp.dataset.nk]; }); }
+function setCol(k,v){ v=Math.max(0,Math.min(Math.round(v),$('fmtCanvas').width/fmtScale)); fmtCols[k]=v; drawGuides(); syncNums(); fmtPreview(); }
 function fmtPreview(){
   const rows=parsePage(fmtWords,fmtCols).filter(r=>r[0]==='item');
   $('fmtRows').innerHTML=rows.map(r=>`<tr><td class="l">${esc(r[1])}</td><td>${r[3]}</td><td>${esc(r[2])}</td><td>${(r[4]).toLocaleString('ja-JP')}</td></tr>`).join('')
@@ -945,12 +965,15 @@ function fmtPreview(){
 }
 function bindFormatTab(){
   $('fmtPdf').addEventListener('change',e=>{ const f=e.target.files[0]; if(f)fmtLoadPdf(f); e.target.value=''; });
-  // 境界線ドラッグ
+  // 数値入力での調整
+  $('fmtNums').addEventListener('click',e=>{ if(e.target.classList.contains('nbtn')){ setCol(e.target.dataset.nk, (fmtCols[e.target.dataset.nk]||0)+(+e.target.dataset.d)); } });
+  $('fmtNums').addEventListener('input',e=>{ if(e.target.classList.contains('ncol')){ const v=parseInt(e.target.value); if(!isNaN(v))setCol(e.target.dataset.nk,v); } });
+  // 境界線ドラッグ（ラベル付きグラブで掴みやすく）
   let drag=null;
-  $('fmtGuides').addEventListener('pointerdown',e=>{ if(e.target.dataset.k){ drag=e.target.dataset.k; e.target.setPointerCapture(e.pointerId); } });
+  $('fmtGuides').addEventListener('pointerdown',e=>{ const g=e.target.closest('.guide-grab'); if(g){ drag=g.dataset.k; g.setPointerCapture(e.pointerId); e.preventDefault(); } });
   $('fmtGuides').addEventListener('pointermove',e=>{ if(!drag)return;
     const rect=$('fmtCanvas').getBoundingClientRect(); let x=(e.clientX-rect.left); x=Math.max(0,Math.min(x,$('fmtCanvas').width));
-    fmtCols[drag]=Math.round(x/fmtScale); drawGuides(); fmtPreview(); });
+    setCol(drag, x/fmtScale); });
   $('fmtGuides').addEventListener('pointerup',()=>{ drag=null; });
   $('fmtSave').addEventListener('click',async()=>{
     const name=($('fmtName').value||'').trim(); if(!name){ toast('会社名を入れてください'); return; }
