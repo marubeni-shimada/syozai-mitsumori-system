@@ -348,6 +348,17 @@
       <h2>登録済みの書式</h2>
       <div class="tablewrap"><table style="min-width:420px"><thead><tr><th class="l">会社名</th><th class="l">列位置(品/数/単位/単価/金額)</th><th></th></tr></thead><tbody id="fmtList"></tbody></table></div>
     </div>
+
+    <div class="card">
+      <h2>バックアップ</h2>
+      <p class="hint" style="margin-top:0">書式・条件プリセット・名寄せ学習をまとめて1つのファイルに書き出せます。万一データが消えても、このファイルを読み込めば復元できます。ときどき書き出して手元に保存しておくと安心です。</p>
+      <div class="row">
+        <button type="button" id="backupExport">バックアップを書き出す</button>
+        <span class="filebtn"><button type="button" class="ghost">バックアップを読み込む</button><input type="file" id="backupImport" accept=".json,application/json"></span>
+      </div>
+      <p class="hint" id="backupMsg"></p>
+    </div>
+
     <div class="stepnav"><button type="button" class="ghost" data-go="1">◀ 戻る</button><span></span></div>
   </section>
 </div>
@@ -1037,6 +1048,37 @@ function bindFormatTab(){
   });
   $('fmtList').addEventListener('click',async e=>{ if(e.target.dataset.fdel!==undefined){
     if(!confirm('この書式を削除しますか？'))return; FORMATS.splice(+e.target.dataset.fdel,1); await saveFormatsGAS(); renderFormatSel(); toast('削除しました'); } });
+  // バックアップ書き出し
+  $('backupExport').addEventListener('click',()=>{
+    const data={type:'mitsumori-backup',ver:1,date:new Date().toISOString(),formats:FORMATS,profiles:PROFILES,learned:LEARNED};
+    const blob=new Blob([JSON.stringify(data,null,2)],{type:'application/json'});
+    const a=document.createElement('a'); a.href=URL.createObjectURL(blob);
+    const d=new Date(); a.download=`mitsumori_backup_${d.getFullYear()}${('0'+(d.getMonth()+1)).slice(-2)}${('0'+d.getDate()).slice(-2)}.json`;
+    a.click(); setTimeout(()=>URL.revokeObjectURL(a.href),1000);
+    $('backupMsg').textContent='バックアップを書き出しました。手元に保管してください。';
+  });
+  // バックアップ読み込み（復元）
+  $('backupImport').addEventListener('change',async e=>{
+    const f=e.target.files[0]; if(!f)return; e.target.value='';
+    try{
+      const d=JSON.parse(await f.text());
+      if(d.type!=='mitsumori-backup'){ $('backupMsg').textContent='このファイルはバックアップ形式ではありません。'; return; }
+      if(!confirm('現在の書式・条件・学習を、このバックアップで上書きします。よろしいですか？'))return;
+      if(Array.isArray(d.formats))FORMATS=d.formats;
+      if(Array.isArray(d.profiles)&&d.profiles.length)PROFILES=d.profiles;
+      if(d.learned&&typeof d.learned==='object')LEARNED=d.learned;
+      toast('復元してGASへ保存中…',true);
+      let ok=true;
+      if(GAS_URL){ try{
+        await saveFormatsGAS();
+        await fetch(GAS_URL,{method:'POST',headers:{'Content-Type':'text/plain;charset=utf-8'},body:JSON.stringify({action:'saveProfiles',profiles:PROFILES})});
+        await fetch(GAS_URL,{method:'POST',headers:{'Content-Type':'text/plain;charset=utf-8'},body:JSON.stringify({action:'setLearned',learned:LEARNED})});
+      }catch(_){ ok=false; } }
+      saveProfilesLocal(); renderFormatSel(); renderProfiles(); renderIdBar();
+      toastDone(ok?'バックアップから復元しました':'復元（この端末のみ。GAS保存は失敗）');
+      $('backupMsg').textContent=`復元：書式${FORMATS.length}件 / 担当者${PROFILES.length}件 / 学習${Object.keys(LEARNED).length}社分`;
+    }catch(err){ $('backupMsg').textContent='読み込みに失敗しました（ファイルが壊れている可能性）。'; }
+  });
 }
 
 // 初期化
