@@ -518,6 +518,7 @@ function applyAdminUI(){
   document.querySelectorAll('.admin-only').forEach(el=>el.hidden=!ADMIN);
   document.querySelectorAll('.normal-only').forEach(el=>el.hidden=ADMIN);
   const b=$('adminBtn'); b.textContent=ADMIN?'管理者（ログアウト）':'管理者'; b.classList.toggle('on',ADMIN);
+  if(!ADMIN && curStep===4) showStep(1);   // 管理者終了時に書式登録を開いていたらステップ1へ
 }
 function bindAdmin(){
   applyAdminUI();
