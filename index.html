@@ -293,7 +293,17 @@
       <span class="hint">0001〜9999の空き番号を若い順に自動採番します。</span>
     </div>
     <div class="tablewrap" id="newRegWrap" hidden style="margin-top:10px"><table style="min-width:420px"><thead><tr><th class="l">採番コード</th><th class="l">品名</th><th>単位</th></tr></thead><tbody id="newRegRows"></tbody></table></div>
-    <p class="hint">手順：①このファイルを弥生の［台帳インポート］で取り込む → ②下の見積取込ファイルを取り込む。</p>
+    <p class="hint" style="margin-top:12px"><b>弥生 商品台帳への登録手順</b>（登録してから見積を取り込みます）</p>
+    <ol class="steps" style="margin-top:6px">
+      <li>弥生販売で <b>［ファイル］→［インポート］→［台帳インポート］</b> → ウィザードで［次へ］</li>
+      <li><b>「台帳のインポート」</b> を選択</li>
+      <li>台帳の一覧から <b>「商品」</b> を選び、出力した <b>台帳登録ファイル（.txt）</b> を指定</li>
+      <li>項目区切り＝<b>カンマ区切り</b>、インポート開始行＝<b>1</b></li>
+      <li><b>［作成］</b> → 項目の対応付けで、ファイルの並び（商品コード／商品名／カナ／規格／単位…）に合わせる。使わない列は<b>「[未使用]」</b>。並び順は保存でき次回も使えます</li>
+      <li><b>［次へ］</b> で結果確認（［確認表印刷］で登録分、［エラー一覧印刷］で失敗分）→ <b>［完了］</b></li>
+      <li>登録できたら、下の<b>見積取込ファイル</b>を取り込む</li>
+    </ol>
+    <p class="hint">※ カナや規格が必須設定だと弾かれることがあります。エラーが出たら内容を確認してください。</p>
   </div>
 
   <!-- ⑤ 出力 -->
