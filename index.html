@@ -111,6 +111,13 @@
   .stepnav{display:flex;justify-content:space-between;gap:10px;margin-top:2px}
   .stepnav button{min-width:120px}
   .warn-box{background:var(--warn-soft);color:var(--warn);border:1px solid var(--warn);border-radius:8px;padding:9px 12px;font-size:.82rem;margin:0 0 14px}
+  .idbar{background:var(--accent-soft);border-color:var(--accent)}
+  .idlabel{font-size:.85rem;color:var(--muted)} .idhint{font-size:.82rem;color:var(--muted);margin-left:4px}
+  #idName{font-size:1rem;color:var(--accent)} #idSwitch{margin-left:12px}
+  .apphead{display:flex;align-items:baseline;justify-content:space-between;gap:12px}
+  .adminlink{background:transparent;border:none;box-shadow:none;color:var(--muted);font-size:.74rem;padding:2px 6px;font-weight:500;text-decoration:underline;cursor:pointer}
+  .adminlink:hover{background:transparent;box-shadow:none;transform:none;color:var(--accent)}
+  .adminlink.on{color:var(--sell);font-weight:700;text-decoration:none}
   ol.steps{margin:0;padding-left:0;list-style:none;counter-reset:st;display:flex;flex-direction:column;gap:10px}
   ol.steps li{counter-increment:st;position:relative;padding-left:34px;font-size:.88rem;line-height:1.55}
   ol.steps li::before{content:counter(st);position:absolute;left:0;top:0;width:23px;height:23px;border-radius:50%;background:var(--accent);color:#fff;font-size:.76rem;font-weight:700;display:flex;align-items:center;justify-content:center}
@@ -118,7 +125,10 @@
 </style>
 
 <div class="wrap">
-  <h1>見積変換ツール</h1>
+  <div class="apphead">
+    <h1>見積変換ツール</h1>
+    <button type="button" id="adminBtn" class="adminlink">管理者</button>
+  </div>
   <p class="lead">仕入先の見積 → マージン計算 → 商品台帳の名寄せ → 弥生販売「取引インポート」用CSVを生成。</p>
 
   <div class="tabs">
@@ -128,6 +138,29 @@
   </div>
 
   <section class="step" id="step1">
+  <!-- 担当者（この端末に記憶） -->
+  <div class="card idbar">
+    <div id="idSet" hidden>
+      <span class="idlabel">担当者：</span><b id="idName">—</b>
+      <span class="idhint">の条件で計算します</span>
+      <button type="button" class="ghost sm" id="idCopyLink">自分用リンクをコピー</button>
+      <button type="button" class="ghost sm" id="idSwitch">担当者を切り替え</button>
+    </div>
+    <div id="idPick">
+      <span class="idlabel">はじめに、あなたの担当者を選んでください（この端末に記憶します）</span>
+      <div class="row" style="margin-top:8px">
+        <select id="idSel" style="min-width:180px"></select>
+        <button type="button" class="sm" id="idSave">この担当者で使う</button>
+      </div>
+    </div>
+    <div class="row admin-only" id="adminRow" hidden style="margin-top:12px;border-top:1px solid var(--line);padding-top:12px">
+      <span class="idhint" id="adminStat">管理者モード中：</span>
+      <button type="button" class="ghost sm admin-only" id="profNew" hidden>＋担当者を追加</button>
+      <button type="button" class="ghost sm admin-only" id="profRename" hidden>名前変更</button>
+      <button type="button" class="ghost sm admin-only" id="profDel" hidden>削除</button>
+    </div>
+  </div>
+
   <!-- ① 入力 -->
   <div class="card">
     <h2>① 見積を読み込む</h2>
@@ -155,7 +188,7 @@
   <section class="step" id="step2" hidden>
   <!-- ② 設定 -->
   <div class="card">
-    <h2>② 見積ヘッダ ＆ マージン</h2>
+    <h2>② 見積ヘッダ</h2>
     <div class="row">
       <div class="f"><label>見積番号</label><input class="s" id="hNo" value="00090001"></div>
       <div class="f"><label>見積日(YYMMDD/令和)</label><input class="s" id="hDate" value="081020"></div>
@@ -163,12 +196,35 @@
       <div class="f"><label>得意先名</label><input class="m" id="hTokuiName" value="㈱常宏"></div>
       <div class="f"><label>担当者コード</label><input class="s" id="hTanto" value="111"></div>
     </div>
-    <div class="row" style="margin-top:14px">
-      <div class="f"><label>全体マージン</label><div style="display:flex;align-items:center;gap:6px"><input class="marginbig" id="gMargin" type="number" value="20" step="1"><span style="font-weight:700;color:var(--accent)">%</span></div></div>
-      <div class="f"><label>売単価の丸め</label><select id="roundUnit"><option value="1">1円</option><option value="10" selected>10円</option><option value="100">100円</option></select></div>
-      <div class="f"><label>丸め方法</label><select id="roundMode"><option value="round" selected>四捨五入</option><option value="ceil">切上げ</option><option value="floor">切捨て</option></select></div>
-      <button type="button" id="applyAll">全明細に適用</button>
+  </div>
+
+  <!-- 条件プリセット -->
+  <div class="card">
+    <h2>条件（担当者ごとに詳細設定できます）</h2>
+    <div class="row">
+      <div class="f"><label>担当者</label><select id="profSel" style="min-width:160px"></select></div>
+      <button type="button" class="sm" id="profSave">保存（共有）</button>
+      <span class="idhint">※担当者の追加・改名・削除は右上の「管理者」から</span>
     </div>
+    <div class="row" style="margin-top:14px">
+      <div class="f"><label>既定マージン</label><div style="display:flex;align-items:center;gap:6px"><input class="marginbig" id="pMargin" type="number" value="20" step="1"><span style="font-weight:700;color:var(--accent)">%</span></div></div>
+      <div class="f"><label>既定の丸め</label><select id="pRoundUnit"><option value="1">1円</option><option value="10" selected>10円</option><option value="100">100円</option></select></div>
+      <div class="f"><label>丸め方法</label><select id="pRoundMode"><option value="round" selected>四捨五入</option><option value="ceil">切上げ</option><option value="floor">切捨て</option></select></div>
+    </div>
+    <p class="hint" style="margin-top:14px"><b>単価帯ごとの詳細ルール</b>（任意・上から順に判定。該当しなければ既定を適用）</p>
+    <div class="tablewrap" style="margin-top:6px">
+      <table style="min-width:620px">
+        <thead><tr>
+          <th>原単価 下限</th><th>上限(空=なし)</th><th>マージン%</th><th>丸め単位</th><th>丸め方法</th><th></th>
+        </tr></thead>
+        <tbody id="ruleRows"></tbody>
+      </table>
+    </div>
+    <div class="row" style="margin-top:10px">
+      <button type="button" class="ghost sm" id="ruleAdd">＋ルール追加</button>
+      <button type="button" id="applyAll">この条件で全明細を計算</button>
+    </div>
+    <p class="hint">例：下限 10000・上限 空・マージン15・丸め10円・切捨て → 「原単価1万円以上は15%で10円切り捨て」。条件は保存するとGASに入り全端末で共有されます。</p>
   </div>
 
   <!-- ③ 明細＋名寄せ -->
@@ -298,15 +354,132 @@ function parseCSV(text){
 }
 
 // ===== 明細モデル =====
-let LINES=[]; // {kind:'item'|'sec', name, qty, unit, cost, margin, code, cand, verdict}
+let LINES=[]; // {kind, name, qty, unit, cost, margin, roundUnit, roundMode, code, cand, verdict}
 const yen=n=>Math.round(n||0).toLocaleString('ja-JP');
 const $=id=>document.getElementById(id);
 
-function roundSell(cost,margin){
-  const unit=+$('roundUnit').value, mode=$('roundMode').value, x=cost*(1+margin/100)/unit;
+// ===== 条件プリセット =====
+// profile: {name, defMargin, defUnit, defMode, rules:[{min,max,margin,unit,mode}]}
+let PROFILES=[{name:'標準',defMargin:20,defUnit:10,defMode:'round',rules:[]}];
+let curIdx=0;
+const curProfile=()=>PROFILES[curIdx]||PROFILES[0];
+function loadProfilesLocal(){ try{ const s=localStorage.getItem('mitsumori_profiles'); if(s){const o=JSON.parse(s); if(o&&o.length)PROFILES=o;} }catch(_){} }
+function saveProfilesLocal(){ try{ localStorage.setItem('mitsumori_profiles',JSON.stringify(PROFILES)); }catch(_){} }
+
+async function loadProfilesGAS(){
+  if(!GAS_URL)return;
+  try{ const r=await fetch(GAS_URL,{method:'POST',headers:{'Content-Type':'text/plain;charset=utf-8'},body:JSON.stringify({action:'getProfiles'})});
+    const j=await r.json(); if(j&&j.ok&&j.profiles&&j.profiles.length){ PROFILES=j.profiles; curIdx=0; selectProfileByName(getMyName()); renderProfiles(); renderIdBar(); applyProfileToLines(); render(); } }catch(_){}
+}
+async function saveProfilesGAS(){
+  saveProfilesLocal();
+  if(!GAS_URL){ toast('保存しました（この端末のみ）'); return; }
+  try{ toast('条件を保存中…',true);
+    const r=await fetch(GAS_URL,{method:'POST',headers:{'Content-Type':'text/plain;charset=utf-8'},body:JSON.stringify({action:'saveProfiles',profiles:PROFILES})});
+    const j=await r.json(); if(!j.ok)throw 0; toastDone('条件を保存しました（全端末で共有）'); }
+  catch(_){ toastDone('GAS保存に失敗（この端末には保存済み）'); }
+}
+
+// 単価帯ルールを原単価で判定
+function pickRule(prof,cost){
+  for(const r of (prof.rules||[])){
+    const min=r.min==null||r.min===''?-Infinity:+r.min, max=r.max==null||r.max===''?Infinity:+r.max;
+    if(cost>=min&&cost<max) return r;
+  }
+  return null;
+}
+function applyProfileToLines(){
+  const p=curProfile();
+  LINES.forEach(l=>{ if(l.kind!=='item')return;
+    const r=pickRule(p,l.cost);
+    l.margin = r?+r.margin:p.defMargin;
+    l.roundUnit = r?+r.unit:p.defUnit;
+    l.roundMode = r?r.mode:p.defMode;
+  });
+}
+
+// プリセットUI
+function renderProfiles(){
+  const sel=$('profSel'); sel.innerHTML=PROFILES.map((p,i)=>`<option value="${i}" ${i===curIdx?'selected':''}>${esc(p.name)}</option>`).join('');
+  const p=curProfile();
+  $('pMargin').value=p.defMargin; $('pRoundUnit').value=p.defUnit; $('pRoundMode').value=p.defMode;
+  renderRules();
+}
+function renderRules(){
+  const p=curProfile(); const tb=$('ruleRows');
+  tb.innerHTML=(p.rules||[]).map((r,i)=>
+    `<tr>`+
+    `<td><input class="celled rl" data-ri="${i}" data-rk="min" style="width:80px" value="${r.min??''}"></td>`+
+    `<td><input class="celled rl" data-ri="${i}" data-rk="max" style="width:80px" value="${r.max??''}"></td>`+
+    `<td><input class="celled rl" data-ri="${i}" data-rk="margin" style="width:56px" value="${r.margin??''}"></td>`+
+    `<td><select class="rl" data-ri="${i}" data-rk="unit"><option value="1" ${r.unit==1?'selected':''}>1円</option><option value="10" ${r.unit==10?'selected':''}>10円</option><option value="100" ${r.unit==100?'selected':''}>100円</option></select></td>`+
+    `<td><select class="rl" data-ri="${i}" data-rk="mode"><option value="round" ${r.mode==='round'?'selected':''}>四捨五入</option><option value="ceil" ${r.mode==='ceil'?'selected':''}>切上げ</option><option value="floor" ${r.mode==='floor'?'selected':''}>切捨て</option></select></td>`+
+    `<td><button class="delrow" data-rdel="${i}">×</button></td>`+
+    `</tr>`).join('');
+}
+function bindProfileUI(){
+  $('profSel').addEventListener('change',e=>{ curIdx=+e.target.value; renderProfiles(); applyProfileToLines(); render(); });
+  $('pMargin').addEventListener('input',e=>{ curProfile().defMargin=parseFloat(e.target.value)||0; applyProfileToLines(); recompute(); });
+  $('pRoundUnit').addEventListener('change',e=>{ curProfile().defUnit=+e.target.value; applyProfileToLines(); recompute(); });
+  $('pRoundMode').addEventListener('change',e=>{ curProfile().defMode=e.target.value; applyProfileToLines(); recompute(); });
+  $('ruleAdd').addEventListener('click',()=>{ curProfile().rules.push({min:'',max:'',margin:curProfile().defMargin,unit:curProfile().defUnit,mode:curProfile().defMode}); renderRules(); });
+  $('ruleRows').addEventListener('input',e=>{ if(e.target.classList.contains('rl')){ const r=curProfile().rules[+e.target.dataset.ri]; r[e.target.dataset.rk]=e.target.value; } });
+  $('ruleRows').addEventListener('change',e=>{ if(e.target.tagName==='SELECT'&&e.target.classList.contains('rl')){ const r=curProfile().rules[+e.target.dataset.ri]; r[e.target.dataset.rk]=e.target.value; } });
+  $('ruleRows').addEventListener('click',e=>{ if(e.target.dataset.rdel!==undefined){ curProfile().rules.splice(+e.target.dataset.rdel,1); renderRules(); } });
+  $('profNew').addEventListener('click',()=>{ const n=prompt('担当者名'); if(!n)return; PROFILES.push({name:n,defMargin:20,defUnit:10,defMode:'round',rules:[]}); curIdx=PROFILES.length-1; renderProfiles(); renderIdBar(); toast(`担当者「${n}」を追加（保存で共有）`); });
+  $('profRename').addEventListener('click',()=>{ const n=prompt('名前を変更',curProfile().name); if(!n)return; curProfile().name=n; renderProfiles(); renderIdBar(); });
+  $('profDel').addEventListener('click',()=>{ if(PROFILES.length<=1){toast('最後の1件は削除できません');return;} if(!confirm('この担当者を削除しますか？'))return; PROFILES.splice(curIdx,1); curIdx=0; renderProfiles(); renderIdBar(); applyProfileToLines(); render(); });
+  $('profSave').addEventListener('click',saveProfilesGAS);
+}
+
+// 管理者モード（担当者の追加/削除/改名のみ制限。詳細設定は誰でも可）
+let ADMIN=false;
+function applyAdminUI(){
+  document.querySelectorAll('.admin-only').forEach(el=>el.hidden=!ADMIN);
+  const b=$('adminBtn'); b.textContent=ADMIN?'管理者（ログアウト）':'管理者'; b.classList.toggle('on',ADMIN);
+}
+function bindAdmin(){
+  applyAdminUI();
+  $('adminBtn').addEventListener('click',async()=>{
+    if(ADMIN){ ADMIN=false; applyAdminUI(); toast('管理者ログアウト'); return; }
+    const pin=prompt('管理者PINを入力'); if(pin===null)return;
+    if(GAS_URL){ try{ const r=await fetch(GAS_URL,{method:'POST',headers:{'Content-Type':'text/plain;charset=utf-8'},body:JSON.stringify({action:'checkAdmin',pin})});
+        const j=await r.json(); if(j.ok&&j.admin){ ADMIN=true; applyAdminUI(); toast('管理者でログインしました'); } else toast('PINが違います'); return; }catch(_){} }
+    // GAS未接続時のフォールバック（既定PIN 0000）
+    if(pin==='0000'){ ADMIN=true; applyAdminUI(); toast('管理者でログイン（ローカル判定）'); } else toast('PINが違います');
+  });
+}
+
+// この端末の担当者（URL #me= 最優先 → localStorage）
+function hashName(){ const m=(location.hash||'').match(/me=([^&]+)/); try{ return m?decodeURIComponent(m[1]):''; }catch(_){ return ''; } }
+function getMyName(){ const h=hashName(); if(h)return h; try{ return localStorage.getItem('mitsumori_me')||''; }catch(_){ return ''; } }
+function setMyName(n){ try{ localStorage.setItem('mitsumori_me',n); }catch(_){} }
+function myLink(n){ return location.origin+location.pathname+'#me='+encodeURIComponent(n); }
+function selectProfileByName(n){ const i=PROFILES.findIndex(p=>p.name===n); if(i>=0){ curIdx=i; return true; } return false; }
+function renderIdBar(){
+  const me=getMyName(); const found=me&&selectProfileByName(me);
+  $('idSel').innerHTML=PROFILES.map((p,i)=>`<option value="${i}">${esc(p.name)}</option>`).join('');
+  if(found){ $('idSet').hidden=false; $('idPick').hidden=true; $('idName').textContent=me; }
+  else{ $('idSet').hidden=true; $('idPick').hidden=false; }
+}
+function bindIdBar(){
+  $('idSave').addEventListener('click',()=>{ const i=+$('idSel').value; const n=PROFILES[i].name;
+    setMyName(n); try{location.hash='me='+encodeURIComponent(n);}catch(_){}
+    curIdx=i; renderProfiles(); renderIdBar(); applyProfileToLines(); render(); toast(`担当者「${n}」で使います`); });
+  $('idSwitch').addEventListener('click',()=>{ $('idSet').hidden=true; $('idPick').hidden=false; $('idSel').value=curIdx; });
+  $('idCopyLink').addEventListener('click',async()=>{ const n=PROFILES[curIdx].name; const url=myLink(n);
+    try{ await navigator.clipboard.writeText(url); toast('自分用リンクをコピーしました。ブラウザにブックマークを'); }
+    catch(_){ prompt('このURLをブックマークしてください',url); } });
+}
+
+// 行は自前の丸め設定(roundUnit/roundMode)を持つ。無ければ既定へフォールバック
+function roundSell(cost,margin,unit,mode){
+  unit=unit||+($('pRoundUnit').value||10); mode=mode||$('pRoundMode').value||'round';
+  const x=cost*(1+margin/100)/unit;
   const r=mode==='ceil'?Math.ceil(x):mode==='floor'?Math.floor(x):Math.round(x);
   return r*unit;
 }
+const lineSell=l=>roundSell(l.cost,l.margin,l.roundUnit,l.roundMode);
 function recalcMatch(l){ if(l.kind!=='item'){return;} const r=matchTop(l.name,l.unit); l.cand=r.cand; l.verdict=r.verdict;
   l.code = r.verdict==='new' ? '' : (r.cand[0]?r.cand[0].code:''); }
 
@@ -321,7 +494,7 @@ function render(animate){
       tr.innerHTML=`<td>摘要</td><td class="l" colspan="7"><input class="celled" data-i="${i}" data-k="name" value="${esc(l.name)}"></td><td></td><td><button class="delrow" data-del="${i}">×</button></td>`;
       tb.appendChild(tr); return; }
     ni++;
-    const sell=roundSell(l.cost,l.margin), amt=sell*l.qty; tc+=l.cost*l.qty; ts+=amt;
+    const sell=lineSell(l), amt=sell*l.qty; tc+=l.cost*l.qty; ts+=amt;
     const tag = l.verdict==='ok'?'<span class="tag ok">一致</span>':l.verdict==='chk'?'<span class="tag chk">要確認</span>':'<span class="tag new">新規</span>';
     if(l.verdict==='new'){newList.push(l.name);} else if(l.code){nm++;}
     let opts = l.cand.map(c=>`<option value="${c.code}" ${c.code===l.code?'selected':''}>${c.code}｜${esc(c.name)}（${c.s}）</option>`).join('');
@@ -352,7 +525,7 @@ function bumpSet(id,val){ const e=$(id); if(!e)return; if(e.textContent!==val){ 
 function recompute(){
   let tc=0,ts=0,ni=0,nm=0,newList=[];
   LINES.forEach((l,i)=>{ if(l.kind!=='item')return; ni++;
-    const sell=roundSell(l.cost,l.margin),amt=sell*l.qty; tc+=l.cost*l.qty; ts+=amt;
+    const sell=lineSell(l),amt=sell*l.qty; tc+=l.cost*l.qty; ts+=amt;
     const se=document.querySelector(`[data-sell="${i}"]`),ae=document.querySelector(`[data-amt="${i}"]`);
     if(se&&se.textContent!==yen(sell)){se.textContent=yen(sell);flashCell(se);} if(ae)ae.textContent=yen(amt);
     if(l.verdict==='new')newList.push(l.name); else if(l.code)nm++; });
@@ -378,10 +551,8 @@ $('rows').addEventListener('change',e=>{
 $('rows').addEventListener('click',e=>{
   if(e.target.dataset.del!==undefined){ LINES.splice(+e.target.dataset.del,1); render(); }
 });
-$('applyAll').addEventListener('click',()=>{const g=parseFloat($('gMargin').value)||0; LINES.forEach(l=>{if(l.kind==='item')l.margin=g;}); render();});
-$('gMargin').addEventListener('input',()=>{const g=parseFloat($('gMargin').value)||0; LINES.forEach(l=>{if(l.kind==='item')l.margin=g;}); render();});
-$('roundUnit').addEventListener('change',render); $('roundMode').addEventListener('change',render);
-$('addRow').addEventListener('click',()=>{const l={kind:'item',name:'',qty:1,unit:'',cost:0,margin:parseFloat($('gMargin').value)||0,code:'',cand:[],verdict:'new'};LINES.push(l);render();});
+$('applyAll').addEventListener('click',()=>{ applyProfileToLines(); render(); toast('条件を全明細に適用しました'); });
+$('addRow').addEventListener('click',()=>{const l={kind:'item',name:'',qty:1,unit:'',cost:0,margin:curProfile().defMargin,roundUnit:curProfile().defUnit,roundMode:curProfile().defMode,code:'',cand:[],verdict:'new'};LINES.push(l);render();});
 
 // 常宏サンプル
 const SAMPLE=[
@@ -401,10 +572,10 @@ const SAMPLE=[
  ['cond','（見積条件）※スチールアングルのL45*45はないのでL50*50で見積しています','',0,0],
 ];
 function loadLines(arr){
-  const g=parseFloat($('gMargin').value)||0;
   LINES=arr.map(([kind,name,unit,qty,cost])=>{
-    const l={kind:kind==='item'?'item':'sec',name,qty:qty||0,unit:unit||'',cost:cost||0,margin:g,code:'',cand:[],verdict:'new'};
+    const l={kind:kind==='item'?'item':'sec',name,qty:qty||0,unit:unit||'',cost:cost||0,margin:0,roundUnit:10,roundMode:'round',code:'',cand:[],verdict:'new'};
     if(l.kind==='item')recalcMatch(l); return l;});
+  applyProfileToLines();
   render(true); resolveAll();
 }
 $('loadSample').addEventListener('click',()=>loadLines(SAMPLE));
@@ -474,7 +645,7 @@ function buildCsv(){
   LINES.forEach(l=>{ ln++; const r=new Array(58).fill('');
     r[0]='1';r[1]='1';r[2]='0';r[3]=H.date;r[4]=H.no;r[5]='20';r[6]='1';r[7]='2';r[8]='1';r[9]='1';
     r[10]=H.tokui;r[12]=H.tanto;r[13]=String(ln);r[36]=H.tname;r[49]='御見積合計金額';r[53]='様';r[54]='3';r[55]='3';r[56]='3';
-    if(l.kind==='item'){ const sell=roundSell(l.cost,l.margin), amt=sell*l.qty, camt=l.cost*l.qty;
+    if(l.kind==='item'){ const sell=lineSell(l), amt=sell*l.qty, camt=l.cost*l.qty;
       r[14]='1';r[15]=l.code||'';r[17]=l.name;r[18]='13';r[19]=l.unit;r[20]='0';r[21]='0';r[22]='0000';
       r[23]=String(l.qty);r[24]=String(sell);r[25]=String(amt);r[27]=String(amt);r[28]=String(camt);r[29]=String(l.cost);r[31]='2';r[32]='2'; }
     else{ r[14]='20';r[17]=l.name;r[18]='0';r[20]='0';r[21]='0';['23','24','25','27','28','29'].forEach(c=>r[+c]='0');r[31]='0';r[32]='0'; }
@@ -543,6 +714,16 @@ function showStep(n){
 document.querySelectorAll('.tab').forEach(t=>t.addEventListener('click',()=>showStep(+t.dataset.t)));
 document.querySelectorAll('[data-go]').forEach(b=>b.addEventListener('click',()=>showStep(+b.dataset.go)));
 
+// 初期化
+loadProfilesLocal();
+if(hashName())setMyName(hashName());       // URLで来たら端末にも記憶
+selectProfileByName(getMyName());  // この端末の担当者を優先
+renderProfiles();
+bindProfileUI();
+bindAdmin();
+renderIdBar();
+bindIdBar();
 loadLines(SAMPLE);
 showStep(1);
+loadProfilesGAS();   // GASに共有プリセットがあれば上書き
 </script>
