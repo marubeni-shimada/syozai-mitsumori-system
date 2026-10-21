@@ -1,6 +1,7 @@
 <title>見積変換ツール</title>
 <meta name="claude:viewport-fit-sides" content="cover">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/encoding-japanese/2.0.0/encoding.min.js"></script>
 <style>
   /* レイアウト: 縦1カラム。①入力(PDF/サンプル) ②ヘッダ・マージン設定 ③明細+名寄せ表 ④合計 ⑤CSV出力 */
   :root{
@@ -109,6 +110,11 @@
   .tab.done .n{background:var(--sell);color:#fff}
   .stepnav{display:flex;justify-content:space-between;gap:10px;margin-top:2px}
   .stepnav button{min-width:120px}
+  .warn-box{background:var(--warn-soft);color:var(--warn);border:1px solid var(--warn);border-radius:8px;padding:9px 12px;font-size:.82rem;margin:0 0 14px}
+  ol.steps{margin:0;padding-left:0;list-style:none;counter-reset:st;display:flex;flex-direction:column;gap:10px}
+  ol.steps li{counter-increment:st;position:relative;padding-left:34px;font-size:.88rem;line-height:1.55}
+  ol.steps li::before{content:counter(st);position:absolute;left:0;top:0;width:23px;height:23px;border-radius:50%;background:var(--accent);color:#fff;font-size:.76rem;font-weight:700;display:flex;align-items:center;justify-content:center}
+  ol.steps b{color:var(--fg);font-weight:700}
 </style>
 
 <div class="wrap">
@@ -197,15 +203,30 @@
   <section class="step" id="step3" hidden>
   <!-- ⑤ 出力 -->
   <div class="card">
-    <h2>⑤ 弥生取込CSVを生成</h2>
+    <h2>⑤ 弥生取込ファイルを出力</h2>
     <div class="row">
-      <button type="button" id="genCsv">CSVを生成</button>
+      <button type="button" id="dlCsv">取込ファイルをダウンロード</button>
       <button type="button" class="ghost" id="copyCsv">コピー</button>
-      <button type="button" class="ghost" id="dlCsv">ダウンロード</button>
       <span class="hint" id="newWarn"></span>
     </div>
-    <pre class="csv" id="csvOut" hidden></pre>
-    <p class="hint">取込前に必ず弥生でバックアップを。インポートは取り消せません。得意先コード・見積番号は実在の値に合わせてください。</p>
+    <p class="hint" style="margin-top:12px">下は生成される取込ファイルのプレビューです（内容確認用／Shift-JIS・.txtで保存されます）。</p>
+    <pre class="csv" id="csvOut"></pre>
+  </div>
+
+  <!-- 弥生インポート手順 -->
+  <div class="card">
+    <h2>弥生販売に取り込む手順</h2>
+    <p class="warn-box">⚠ インポートは<b>取り消せません</b>。実行前に必ず弥生でバックアップ（［ファイル］→ バックアップ）を取ってください。</p>
+    <ol class="steps">
+      <li>弥生販売で <b>［ファイル］→［インポート］→［取引インポート］</b> を開く</li>
+      <li>ウィザードで <b>［次へ］</b> → <b>「伝票のインポート」</b> を選択</li>
+      <li>伝票の種類＝<b>見積書</b>、ファイル＝ダウンロードした <b>取込ファイル（.txt）</b> を指定</li>
+      <li>項目区切り＝<b>カンマ区切り</b>、インポート開始行＝<b>1</b></li>
+      <li>項目の対応付けが出たら、前回エクスポートと<b>同じ並び順</b>にする（保存済みならそのまま）</li>
+      <li><b>［作成］→［次へ］</b> で結果を確認（［確認表印刷］で取込分、［エラー一覧印刷］で失敗分）</li>
+      <li><b>［完了］</b></li>
+    </ol>
+    <p class="hint">※ 得意先コード・見積番号・商品コードが弥生に実在しないとエラーになります。エラーが出たらそこを確認してください。</p>
   </div>
   <div class="stepnav"><button type="button" class="ghost" data-go="2">◀ 戻る</button><span></span></div>
   </section>
@@ -460,10 +481,22 @@ function buildCsv(){
     rows.push(r.map(v=>`"${String(v).replace(/"/g,'""')}"`).join(',')); });
   return rows.join('\r\n')+'\r\n';
 }
-$('genCsv').addEventListener('click',()=>{ if(!LINES.length){toast('明細がありません');return;} $('csvOut').textContent=buildCsv(); $('csvOut').hidden=false; toast('CSVを生成しました'); });
-$('copyCsv').addEventListener('click',async()=>{ const t=buildCsv(); try{await navigator.clipboard.writeText(t);toast('コピーしました');}catch(_){ $('csvOut').hidden=false;$('csvOut').textContent=t;toast('コピー不可：表示に切替');}});
-$('dlCsv').addEventListener('click',()=>{ const blob=new Blob([buildCsv()],{type:'text/csv'}); const a=document.createElement('a');
-  a.href=URL.createObjectURL(blob); a.download=`yayoi_mitsumori_${$('hNo').value||'out'}.txt`; a.click(); setTimeout(()=>URL.revokeObjectURL(a.href),1000); toast('ダウンロード（公開ページで有効）'); });
+$('copyCsv').addEventListener('click',async()=>{ const t=buildCsv(); try{await navigator.clipboard.writeText(t);toast('コピーしました');}catch(_){ $('csvOut').textContent=t;toast('コピー不可：表示に切替');}});
+// 弥生はShift-JIS指定。UTF-8のままだと半角カナ等が化けるためSJISで書き出す
+function toSjisBlob(text){
+  try{
+    if(window.Encoding){
+      const sjis=Encoding.convert(Encoding.stringToCode(text),{to:'SJIS',from:'UNICODE'});
+      return new Blob([new Uint8Array(sjis)],{type:'text/plain'});
+    }
+  }catch(_){}
+  return new Blob([text],{type:'text/plain'}); // 変換不可時はUTF-8で退避
+}
+$('dlCsv').addEventListener('click',()=>{ if(!LINES.length){toast('明細がありません');return;}
+  const t=buildCsv(); $('csvOut').textContent=t;   // プレビューも更新
+  const blob=toSjisBlob(t); const a=document.createElement('a');
+  a.href=URL.createObjectURL(blob); a.download=`yayoi_mitsumori_${$('hNo').value||'out'}.txt`; a.click(); setTimeout(()=>URL.revokeObjectURL(a.href),1000);
+  toast(window.Encoding?'取込ファイルをダウンロード（Shift-JIS）':'ダウンロードしました（UTF-8）'); });
 
 let tt; function toast(m,busy){const t=$('toast');t.innerHTML=(busy?'<span class="spin"></span>':'')+esc(m);t.classList.add('show');clearTimeout(tt);if(!busy)tt=setTimeout(()=>t.classList.remove('show'),1800);}
 function toastDone(m){clearTimeout(tt);const t=$('toast');t.innerHTML=esc(m);t.classList.add('show');tt=setTimeout(()=>t.classList.remove('show'),1800);}
