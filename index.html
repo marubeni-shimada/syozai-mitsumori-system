@@ -118,6 +118,11 @@
   .adminlink{background:transparent;border:none;box-shadow:none;color:var(--muted);font-size:.74rem;padding:2px 6px;font-weight:500;text-decoration:underline;cursor:pointer}
   .adminlink:hover{background:transparent;box-shadow:none;transform:none;color:var(--accent)}
   .adminlink.on{color:var(--sell);font-weight:700;text-decoration:none}
+  .draftrow{display:flex;align-items:center;gap:10px;justify-content:space-between;border:1px solid var(--line);border-radius:8px;padding:8px 12px;background:var(--bg);cursor:pointer;transition:border-color .15s,background .15s}
+  .draftrow:hover{border-color:var(--accent);background:var(--accent-soft)}
+  .draftrow .dn{font-weight:600;font-size:.88rem;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .draftrow .dt{font-size:.72rem;color:var(--muted);white-space:nowrap}
+  .draftrow .ddel{border:1px solid var(--line);background:transparent;color:var(--muted);padding:2px 8px;font-size:.78rem;box-shadow:none}
   ol.steps{margin:0;padding-left:0;list-style:none;counter-reset:st;display:flex;flex-direction:column;gap:10px}
   ol.steps li{counter-increment:st;position:relative;padding-left:34px;font-size:.88rem;line-height:1.55}
   ol.steps li::before{content:counter(st);position:absolute;left:0;top:0;width:23px;height:23px;border-radius:50%;background:var(--accent);color:#fff;font-size:.76rem;font-weight:700;display:flex;align-items:center;justify-content:center}
@@ -134,7 +139,7 @@
   <div class="tabs">
     <button type="button" class="tab" data-t="1"><span class="n">1</span>取り込み</button>
     <button type="button" class="tab" data-t="2"><span class="n">2</span>金額と品チェック</button>
-    <button type="button" class="tab" data-t="3"><span class="n">3</span>CSV起こす</button>
+    <button type="button" class="tab" data-t="3"><span class="n">3</span>エクスポート</button>
     <button type="button" class="tab admin-only" data-t="4" id="tabFormat" hidden><span class="n">⚙</span>書式登録</button>
   </div>
 
@@ -174,9 +179,14 @@
       <span class="filebtn"><button type="button">PDFを読み込む</button><input type="file" id="pdfIn" accept="application/pdf"></span>
       <button type="button" class="ghost" id="loadSample">サンプルを読込</button>
       <button type="button" class="ghost" id="addRow">＋ 明細行を追加</button>
+      <button type="button" class="ghost" id="clearDraft">新規（クリア）</button>
       <div class="f"><label>書式（通常は自動判別）</label><select id="readFormat" style="min-width:150px"><option value="">自動判別</option></select></div>
     </div>
     <p class="hint">PDFを読み込むと仕入先を自動で判別して解析します（登録済みの会社は電話番号で識別）。うまくいかない時だけ、右の「書式」で会社を手動指定してください。読み込んだ明細は表で直接直せます。</p>
+    <div id="draftBox" hidden style="margin-top:12px;border-top:1px solid var(--line);padding-top:12px">
+      <p class="hint" style="margin:0 0 8px"><b>続きから</b>（作成途中の見積。クリックで再開。エクスポートすると消えます）</p>
+      <div id="draftList" style="display:flex;flex-direction:column;gap:6px"></div>
+    </div>
   </div>
 
   <!-- 商品台帳マスタ登録 -->
@@ -260,7 +270,7 @@
       <div class="tc"><div class="k">名寄せ</div><div class="v" id="tMatch">0 / 0</div></div>
     </div>
   </div>
-  <div class="stepnav"><button type="button" class="ghost" data-go="1">◀ 戻る</button><button type="button" data-go="3">次へ：CSV起こす ▶</button></div>
+  <div class="stepnav"><button type="button" class="ghost" data-go="1">◀ 戻る</button><button type="button" data-go="3">次へ：エクスポート ▶</button></div>
   </section>
 
   <section class="step" id="step3" hidden>
@@ -551,6 +561,7 @@ function render(animate){
     tb.appendChild(tr);
   });
   setTotals(tc,ts,nm,ni,newList);
+  if(typeof saveDraft==='function')saveDraft();
 }
 function setTotals(tc,ts,nm,ni,newList){
   bumpSet('tCost',yen(tc)); bumpSet('tSell',yen(ts));
@@ -569,8 +580,58 @@ function recompute(){
     if(se&&se.textContent!==yen(sell)){se.textContent=yen(sell);flashCell(se);} if(ae)ae.textContent=yen(amt);
     if(l.verdict==='new')newList.push(l.name); else if(l.code)nm++; });
   setTotals(tc,ts,nm,ni,newList);
+  saveDraft();
 }
 function flashCell(el){ el.classList.remove('flash'); void el.offsetWidth; el.classList.add('flash'); }
+
+// ===== 作業中データの保存／復元（この端末・複数保持） =====
+const DRAFTS_KEY='mitsumori_drafts';
+let DRAFTS=[], curDraftId=null, curDraftName='', saveTimer=null;
+function loadDrafts(){ try{ DRAFTS=JSON.parse(localStorage.getItem(DRAFTS_KEY)||'[]')||[]; }catch(_){ DRAFTS=[]; } }
+function persistDrafts(){ try{ localStorage.setItem(DRAFTS_KEY,JSON.stringify(DRAFTS)); }catch(_){} }
+function headerVals(){ return {hNo:$('hNo').value,hDate:$('hDate').value,hTokui:$('hTokui').value,hTokuiName:$('hTokuiName').value,hTanto:$('hTanto').value}; }
+function newId(){ return 'd'+Date.now()+Math.random().toString(36).slice(2,5); }
+function saveDraft(){
+  clearTimeout(saveTimer);
+  saveTimer=setTimeout(()=>{
+    if(!LINES.some(l=>l.kind==='item'||l.name)){ return; }  // 空は保存しない
+    if(!curDraftId)curDraftId=newId();
+    const rec={id:curDraftId,name:curDraftName||'無題の見積',lines:LINES,header:headerVals(),t:Date.now()};
+    const i=DRAFTS.findIndex(d=>d.id===curDraftId);
+    if(i>=0)DRAFTS[i]=rec; else DRAFTS.push(rec);
+    persistDrafts(); renderDraftList();
+  },400);
+}
+function renderDraftList(){
+  const box=$('draftBox'), list=$('draftList'); if(!box)return;
+  const others=DRAFTS.slice().sort((a,b)=>b.t-a.t);
+  if(!others.length){ box.hidden=true; return; }
+  box.hidden=false;
+  const d2=t=>{ const x=new Date(t); return `${x.getMonth()+1}/${x.getDate()} ${('0'+x.getHours()).slice(-2)}:${('0'+x.getMinutes()).slice(-2)}`; };
+  list.innerHTML=others.map(d=>{
+    const n=d.lines.filter(l=>l.kind==='item').length;
+    const cur=d.id===curDraftId?' ✓編集中':'';
+    return `<div class="draftrow" data-open="${d.id}"><span class="dn">${esc(d.name)}（${n}件）${cur}</span><span style="display:flex;gap:8px;align-items:center"><span class="dt">${d2(d.t)}</span><button class="ddel" data-ddel="${d.id}">削除</button></span></div>`;
+  }).join('');
+}
+function openDraft(id){
+  const d=DRAFTS.find(x=>x.id===id); if(!d)return;
+  curDraftId=d.id; curDraftName=d.name; LINES=d.lines;
+  ['hNo','hDate','hTokui','hTokuiName','hTanto'].forEach(k=>{ if($(k)&&d.header&&d.header[k]!=null)$(k).value=d.header[k]; });
+  render(); showStep(2); toast(`「${d.name}」を再開`);
+}
+function removeDraft(id){ DRAFTS=DRAFTS.filter(d=>d.id!==id); persistDrafts(); renderDraftList(); }
+function newDraft(){ curDraftId=null; curDraftName=''; LINES=[]; render(); renderDraftList(); toast('新規作成'); }
+// エクスポート完了時：現在の見積を一覧から消す
+function finishDraft(){ if(curDraftId){ removeDraft(curDraftId); curDraftId=null; curDraftName=''; } }
+function bindDrafts(){
+  $('clearDraft').addEventListener('click',newDraft);
+  $('draftList').addEventListener('click',e=>{
+    const del=e.target.dataset.ddel;
+    if(del!==undefined){ e.stopPropagation(); if(confirm('この続きを削除しますか？')){ if(del===curDraftId)newDraft(); removeDraft(del); } return; }
+    const row=e.target.closest('[data-open]'); if(row)openDraft(row.dataset.open);
+  });
+}
 const esc=s=>(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
 
 // 入力ハンドラ
@@ -617,7 +678,7 @@ function loadLines(arr){
   applyProfileToLines();
   render(true); resolveAll();
 }
-$('loadSample').addEventListener('click',()=>loadLines(SAMPLE));
+$('loadSample').addEventListener('click',()=>{ curDraftId=null; curDraftName='常宏サンプル'; loadLines(SAMPLE); });
 
 // PDF読込（列バンド＋行クラスタ方式。この仕入先テンプレート向け）
 pdfjsLib.GlobalWorkerOptions.workerSrc='https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
@@ -644,7 +705,9 @@ $('pdfIn').addEventListener('change',async e=>{
       if(!parsed.some(r=>r[0]==='item')){ const c=detectCols(PAGES[0]); if(c){ parsed=run(c); mode='自動推測'; } } }
     let generic=false;
     if(!parsed.some(r=>r[0]==='item')){ parsed=[]; PAGES.forEach(w=>{parsed=parsed.concat(parseGeneric(w));}); generic=true; mode='汎用'; }
-    if(parsed.some(r=>r[0]==='item')){ loadLines(parsed);
+    if(parsed.some(r=>r[0]==='item')){
+      curDraftId=null; curDraftName=(file.name||'見積').replace(/\.pdf$/i,'');  // PDF名で新しい続きを作る
+      loadLines(parsed);
       const n=parsed.filter(r=>r[0]==='item').length;
       toastDone(generic?`明細 ${n} 件を自動抽出（要確認）`:`明細 ${n} 件を読込（${mode}）`); }
     else toastDone('明細を自動抽出できませんでした。手入力で。');
@@ -791,7 +854,8 @@ $('dlCsv').addEventListener('click',()=>{ if(!LINES.length){toast('明細があ�
   const t=buildCsv(); $('csvOut').textContent=t;   // プレビューも更新
   const blob=toSjisBlob(t); const a=document.createElement('a');
   a.href=URL.createObjectURL(blob); a.download=`yayoi_mitsumori_${$('hNo').value||'out'}.txt`; a.click(); setTimeout(()=>URL.revokeObjectURL(a.href),1000);
-  toast(window.Encoding?'取込ファイルをダウンロード（Shift-JIS）':'ダウンロードしました（UTF-8）'); });
+  finishDraft();   // エクスポートした見積は「続きから」一覧から消す
+  toast(window.Encoding?'エクスポートしました（Shift-JIS）':'エクスポートしました（UTF-8）'); });
 
 let tt; function toast(m,busy){const t=$('toast');t.innerHTML=(busy?'<span class="spin"></span>':'')+esc(m);t.classList.add('show');clearTimeout(tt);if(!busy)tt=setTimeout(()=>t.classList.remove('show'),1800);}
 function toastDone(m){clearTimeout(tt);const t=$('toast');t.innerHTML=esc(m);t.classList.add('show');tt=setTimeout(()=>t.classList.remove('show'),1800);}
@@ -911,7 +975,10 @@ bindAdmin();
 bindFormatTab();
 renderIdBar();
 bindIdBar();
-LINES=[]; render();   // 起動時は空。PDF読込かサンプル読込で明細が入る
+// 作業中データ（続きから）
+['hNo','hDate','hTokui','hTokuiName','hTanto'].forEach(k=>{ const e=$(k); if(e)e.addEventListener('input',saveDraft); });
+loadDrafts(); bindDrafts(); renderDraftList();
+LINES=[]; render();   // 起動時は空。続き一覧から選ぶかPDFを読み込む
 showStep(1);
 loadProfilesGAS();   // GASに共有プリセットがあれば上書き
 loadFormatsGAS();    // 登録済みの仕入先書式を読み込む
