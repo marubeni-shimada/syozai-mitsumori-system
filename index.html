@@ -284,6 +284,18 @@
   </section>
 
   <section class="step" id="step3" hidden>
+  <!-- 新規品：先に台帳登録 -->
+  <div class="card" id="newRegCard" hidden style="border-color:var(--warn)">
+    <h2 style="color:var(--warn)">新規品の台帳登録（先に実施）</h2>
+    <p class="warn-box" id="newRegMsg"></p>
+    <div class="row">
+      <button type="button" id="dlNewReg">新規品の台帳登録ファイルを出力</button>
+      <span class="hint">0001〜9999の空き番号を若い順に自動採番します。</span>
+    </div>
+    <div class="tablewrap" id="newRegWrap" hidden style="margin-top:10px"><table style="min-width:420px"><thead><tr><th class="l">採番コード</th><th class="l">品名</th><th>単位</th></tr></thead><tbody id="newRegRows"></tbody></table></div>
+    <p class="hint">手順：①このファイルを弥生の［台帳インポート］で取り込む → ②下の見積取込ファイルを取り込む。</p>
+  </div>
+
   <!-- ⑤ 出力 -->
   <div class="card">
     <h2>⑤ 弥生取込ファイルを出力</h2>
@@ -903,6 +915,47 @@ function buildCsv(){
   return rows.join('\r\n')+'\r\n';
 }
 $('copyCsv').addEventListener('click',async()=>{ const t=buildCsv(); try{await navigator.clipboard.writeText(t);toast('コピーしました');}catch(_){ $('csvOut').textContent=t;toast('コピー不可：表示に切替');}});
+
+// ===== 新規品の商品台帳登録ファイル =====
+function newItems(){ return LINES.filter(l=>l.kind==='item'&&!l.code); }
+function updateNewRegCard(){
+  const news=newItems(); const card=$('newRegCard'); if(!card)return;
+  if(!news.length){ card.hidden=true; return; }
+  card.hidden=false;
+  $('newRegMsg').textContent=`台帳に無い新規品が ${news.length} 件あります。弥生は未登録品をそのまま取り込めないため、先に商品台帳へ登録してください。`;
+}
+async function allocCodes(count){
+  if(GAS_URL){ try{ const r=await fetch(GAS_URL,{method:'POST',headers:{'Content-Type':'text/plain;charset=utf-8'},body:JSON.stringify({action:'allocCodes',count})});
+    const j=await r.json(); if(j.ok&&j.codes&&j.codes.length>=count)return j.codes; }catch(_){} }
+  return null;
+}
+// 商品台帳登録ファイル（43列・弥生台帳インポート形式）
+function buildMasterReg(items){
+  const rows=items.map(it=>{ const r=new Array(43).fill('');
+    r[0]=it.code; r[1]=it.name; r[2]=''; r[3]=''; r[4]=it.unit||'';
+    r[6]='1'; r[7]='2'; r[10]='2'; r[11]='2'; r[17]='1'; r[40]='1'; r[41]='1';  // 既存行に倣った既定フラグ
+    return r.map(v=>`"${String(v).replace(/"/g,'""')}"`).join(','); });
+  return rows.join('\r\n')+'\r\n';
+}
+$('dlNewReg').addEventListener('click',async()=>{
+  const news=newItems(); if(!news.length){ toast('新規品はありません'); return; }
+  toast('空き番号を採番中…',true);
+  const codes=await allocCodes(news.length);
+  if(!codes){ toastDone('採番に失敗（GAS接続を確認）'); return; }
+  news.forEach((l,i)=>{ l.code=codes[i]; l.verdict='ok'; });   // 見積側にも採番コードを反映
+  const regItems=news.map(l=>({code:l.code,name:l.name,unit:l.unit}));
+  // 登録ファイルをダウンロード（Shift-JIS）
+  const blob=toSjisBlob(buildMasterReg(regItems)); const a=document.createElement('a');
+  const d=new Date(); a.href=URL.createObjectURL(blob);
+  a.download=`shohin_touroku_${d.getFullYear()}${('0'+(d.getMonth()+1)).slice(-2)}${('0'+d.getDate()).slice(-2)}.txt`;
+  a.click(); setTimeout(()=>URL.revokeObjectURL(a.href),1000);
+  // プレビュー表示＋注意
+  $('newRegWrap').hidden=false;
+  $('newRegRows').innerHTML=regItems.map(it=>`<tr><td class="l mono">${it.code}</td><td class="l">${esc(it.name)}</td><td>${esc(it.unit)}</td></tr>`).join('');
+  $('newRegMsg').innerHTML=`<b>${regItems.length}件に空き番号を自動採番しました（${regItems.map(i=>i.code).join(', ')}）。</b> このファイルを弥生の［台帳インポート］で登録してから、下の見積取込ファイルを取り込んでください。`;
+  render(); // 見積プレビュー更新
+  toastDone(`新規品 ${regItems.length}件を採番・出力しました`);
+});
 // 弥生はShift-JIS指定。UTF-8のままだと半角カナ等が化けるためSJISで書き出す
 function toSjisBlob(text){
   try{
@@ -960,7 +1013,7 @@ function showStep(n){
   const sec=$('step'+n);
   sec.classList.remove('anim-fwd','anim-back'); void sec.offsetWidth;
   sec.classList.add(back?'anim-back':'anim-fwd');
-  if(n===3){ $('csvOut').textContent=buildCsv(); $('csvOut').hidden=false; }
+  if(n===3){ $('csvOut').textContent=buildCsv(); $('csvOut').hidden=false; updateNewRegCard(); }
   curStep=n;
   window.scrollTo({top:0,behavior:'smooth'});
 }
