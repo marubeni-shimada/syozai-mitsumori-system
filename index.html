@@ -51,6 +51,7 @@
   .tag.ok{background:var(--sell-soft);color:var(--sell)}
   .tag.chk{background:var(--warn-soft);color:var(--warn)}
   .tag.new{background:var(--new-soft);color:var(--new)}
+  .tag.learned{background:var(--accent-soft);color:var(--accent)}
   @keyframes pop{from{transform:scale(.6);opacity:0}to{transform:scale(1);opacity:1}}
 
   .tablewrap{overflow-x:auto;border:1px solid var(--line);border-radius:10px}
@@ -264,7 +265,7 @@
         <tbody id="rows"></tbody>
       </table>
     </div>
-    <p class="hint"><span class="tag ok">一致</span> 自動採用　<span class="tag chk">要確認</span> 僅差・弱い一致　<span class="tag new">新規</span> 台帳に無し（登録が必要）</p>
+    <p class="hint"><span class="tag learned">学習済</span> 前回の確定を適用　<span class="tag ok">一致</span> 自動採用　<span class="tag chk">要確認</span> 僅差・弱い一致　<span class="tag new">新規</span> 台帳に無し</p>
   </div>
 
   <!-- ④ 合計 -->
@@ -394,7 +395,12 @@ async function gasMatch(items){
   const r=await fetch(GAS_URL,{method:'POST',headers:{'Content-Type':'text/plain;charset=utf-8'},body:JSON.stringify({lines:items})});
   const j=await r.json(); if(!j||!j.ok)throw new Error('gas'); return j;
 }
-function applyResult(l,r){ l.cand=r.cand||[]; l.verdict=r.verdict||'new'; l.code=(l.verdict==='new')?'':(l.cand[0]?l.cand[0].code:''); }
+function applyResult(l,r){ l.cand=r.cand||[]; l.verdict=r.verdict||'new'; l.code=(l.verdict==='new')?'':(l.cand[0]?l.cand[0].code:'');
+  // 学習済み（仕入先＋品名）があれば最優先で確定
+  const lc=learnedCode(curSupplier,l.name);
+  if(lc){ l.code=lc; l.verdict='learned';
+    if(!l.cand.some(c=>c.code===lc)){ l.cand.unshift({code:lc,name:'(学習済み)',unit:l.unit,s:99}); } }
+}
 function setMasterStat(t){ const e=$('masterStat'); if(e)e.textContent=t; }
 async function resolveAll(){
   const items=LINES.filter(l=>l.kind==='item'); if(!items.length)return;
@@ -559,7 +565,7 @@ function render(animate){
       tb.appendChild(tr); return; }
     ni++;
     const sell=lineSell(l), amt=sell*l.qty; tc+=l.cost*l.qty; ts+=amt;
-    const tag = l.verdict==='ok'?'<span class="tag ok">一致</span>':l.verdict==='chk'?'<span class="tag chk">要確認</span>':'<span class="tag new">新規</span>';
+    const tag = l.verdict==='learned'?'<span class="tag learned">学習済</span>':l.verdict==='ok'?'<span class="tag ok">一致</span>':l.verdict==='chk'?'<span class="tag chk">要確認</span>':'<span class="tag new">新規</span>';
     if(l.verdict==='new'){newList.push(l.name);} else if(l.code){nm++;}
     let opts = l.cand.map(c=>`<option value="${c.code}" ${c.code===l.code?'selected':''}>${c.code}｜${esc(c.name)}（${c.s}）</option>`).join('');
     opts = `<option value="">— 新規登録 —</option>`+opts;
@@ -611,7 +617,7 @@ function saveDraft(){
   saveTimer=setTimeout(()=>{
     if(!LINES.some(l=>l.kind==='item'||l.name)){ return; }  // 空は保存しない
     if(!curDraftId)curDraftId=newId();
-    const rec={id:curDraftId,name:curDraftName||'無題の見積',lines:LINES,header:headerVals(),t:Date.now()};
+    const rec={id:curDraftId,name:curDraftName||'無題の見積',supplier:curSupplier,lines:LINES,header:headerVals(),t:Date.now()};
     const i=DRAFTS.findIndex(d=>d.id===curDraftId);
     if(i>=0)DRAFTS[i]=rec; else DRAFTS.push(rec);
     persistDrafts(); renderDraftList();
@@ -631,7 +637,7 @@ function renderDraftList(){
 }
 function openDraft(id){
   const d=DRAFTS.find(x=>x.id===id); if(!d)return;
-  curDraftId=d.id; curDraftName=d.name; LINES=d.lines;
+  curDraftId=d.id; curDraftName=d.name; curSupplier=d.supplier||''; LINES=d.lines;
   ['hNo','hDate','hTokui','hTokuiName','hTanto'].forEach(k=>{ if($(k)&&d.header&&d.header[k]!=null)$(k).value=d.header[k]; });
   render(); showStep(2); toast(`「${d.name}」を再開`);
 }
@@ -722,6 +728,7 @@ $('pdfIn').addEventListener('change',async e=>{
     if(!parsed.some(r=>r[0]==='item')){ parsed=[]; PAGES.forEach(w=>{parsed=parsed.concat(parseGeneric(w));}); generic=true; mode='汎用'; }
     if(parsed.some(r=>r[0]==='item')){
       curDraftId=null; curDraftName=(file.name||'見積').replace(/\.pdf$/i,'');  // PDF名で新しい続きを作る
+      curSupplier=fmt?fmt.name:'';   // 学習の紐付け先（判別できた仕入先）
       loadLines(parsed);
       const n=parsed.filter(r=>r[0]==='item').length;
       toastDone(generic?`明細 ${n} 件を自動抽出（要確認）`:`明細 ${n} 件を読込（${mode}）`); }
@@ -817,6 +824,27 @@ async function saveFormatsGAS(){
     const j=await r.json(); return !!j.ok; }catch(_){ return false; }
 }
 
+// ===== 名寄せ学習（仕入先ごとに 品名→商品コード を記憶） =====
+let LEARNED={}, curSupplier='';
+async function loadLearnedGAS(){
+  if(!GAS_URL)return;
+  try{ const r=await fetch(GAS_URL,{method:'POST',headers:{'Content-Type':'text/plain;charset=utf-8'},body:JSON.stringify({action:'getLearned'})});
+    const j=await r.json(); if(j&&j.ok)LEARNED=j.learned||{}; }catch(_){}
+}
+function learnedCode(supplier,name){
+  const m=LEARNED[supplier]; if(!m)return null; return m[NFKC(name)]||null;
+}
+// 確定した明細（仕入先＋品名→コード）をGASに覚えさせる
+async function learnCurrent(){
+  if(!GAS_URL||!curSupplier)return;
+  const items=LINES.filter(l=>l.kind==='item'&&l.code).map(l=>({name:l.name,code:l.code}));
+  if(!items.length)return;
+  // ローカルにも即反映
+  if(!LEARNED[curSupplier])LEARNED[curSupplier]={};
+  items.forEach(it=>{ LEARNED[curSupplier][NFKC(it.name)]=String(it.code); });
+  try{ await fetch(GAS_URL,{method:'POST',headers:{'Content-Type':'text/plain;charset=utf-8'},body:JSON.stringify({action:'learn',supplier:curSupplier,items})}); }catch(_){}
+}
+
 // 汎用解析（列位置に頼らず「単位＋数字」の並びで拾う。未知の書式向け）
 const UNITS=['組','枚','台','本','個','式','ｍ3','ｍ2','m3','m2','kg','ｋｇ','袋','缶','箱','巻','ｍ','m','ℓ','L','本','冊'];
 function parseGeneric(words){
@@ -875,6 +903,7 @@ $('dlCsv').addEventListener('click',()=>{ if(!LINES.length){toast('明細があ�
   const t=buildCsv(); $('csvOut').textContent=t;   // プレビューも更新
   const blob=toSjisBlob(t); const a=document.createElement('a');
   a.href=URL.createObjectURL(blob); a.download=`yayoi_mitsumori_${$('hNo').value||'out'}.txt`; a.click(); setTimeout(()=>URL.revokeObjectURL(a.href),1000);
+  learnCurrent();  // 確定した 仕入先＋品名→コード を学習
   finishDraft();   // エクスポートした見積は「続きから」一覧から消す
   toast(window.Encoding?'エクスポートしました（Shift-JIS）':'エクスポートしました（UTF-8）'); });
 
@@ -1027,4 +1056,5 @@ LINES=[]; render();   // 起動時は空。続き一覧から選ぶかPDFを読�
 showStep(1);
 loadProfilesGAS();   // GASに共有プリセットがあれば上書き
 loadFormatsGAS();    // 登録済みの仕入先書式を読み込む
+loadLearnedGAS();    // 名寄せ学習データを読み込む
 </script>
