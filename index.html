@@ -990,9 +990,11 @@ function bindFormatTab(){
     const a=Math.round(Math.min(rStartX,x)/fmtScale), b=Math.round(Math.max(rStartX,x)/fmtScale);
     rStartX=null; if(rubber){rubber.remove();rubber=null;}
     if(b-a<4){ promptRange(); return; }  // 誤クリック無視
-    fmtCols[rangeSeq[rangeIdx]]=[a,b];
+    const doneKey=rangeSeq[rangeIdx];
+    fmtCols[doneKey]=[a,b];
+    toast(`「${COL_LABEL[doneKey]}」の範囲指定が完了しました`);
     rangeIdx++; drawBoxes(); fmtPreview();
-    if(rangeIdx>=rangeSeq.length){ rangeMode=false; $('fmtRangeHint').textContent='範囲を指定しました。プレビューを確認して、会社名を入れて保存してください。'; toast('範囲指定が完了しました'); }
+    if(rangeIdx>=rangeSeq.length){ rangeMode=false; $('fmtRangeHint').textContent='範囲を指定しました。プレビューを確認して、会社名を入れて保存してください。'; }
     else promptRange();
   });
   $('fmtSave').addEventListener('click',async()=>{
