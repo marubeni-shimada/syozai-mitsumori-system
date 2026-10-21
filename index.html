@@ -147,17 +147,22 @@
       <button type="button" class="ghost sm" id="idSwitch">担当者を切り替え</button>
     </div>
     <div id="idPick">
-      <span class="idlabel">はじめに、あなたの担当者を選んでください（この端末に記憶します）</span>
+      <span class="idlabel">担当者を選んでください</span>
       <div class="row" style="margin-top:8px">
         <select id="idSel" style="min-width:180px"></select>
-        <button type="button" class="sm" id="idSave">この担当者で使う</button>
+        <button type="button" class="sm" id="idSave">この担当者を使う</button>
       </div>
-    </div>
-    <div class="row admin-only" id="adminRow" hidden style="margin-top:12px;border-top:1px solid var(--line);padding-top:12px">
-      <span class="idhint" id="adminStat">管理者モード中：</span>
-      <button type="button" class="ghost sm admin-only" id="profNew" hidden>＋担当者を追加</button>
-      <button type="button" class="ghost sm admin-only" id="profRename" hidden>名前変更</button>
-      <button type="button" class="ghost sm admin-only" id="profDel" hidden>削除</button>
+      <!-- 通常時の説明（管理者モード中は非表示） -->
+      <p class="hint normal-only" id="pickHint" style="margin-top:10px">「この担当者を使う」にすると詳細設定ができます。設定はこの端末に保持されます。</p>
+      <!-- 管理者モード時の説明＋管理ボタン -->
+      <div class="admin-only" id="adminRow" hidden style="margin-top:10px">
+        <p class="hint" style="color:var(--sell);font-weight:600;margin:0 0 8px">管理者モード中：担当者を追加・編集できます。</p>
+        <div class="row">
+          <button type="button" class="ghost sm admin-only" id="profNew" hidden>＋担当者を追加</button>
+          <button type="button" class="ghost sm admin-only" id="profRename" hidden>名前変更</button>
+          <button type="button" class="ghost sm admin-only" id="profDel" hidden>削除</button>
+        </div>
+      </div>
     </div>
   </div>
 
@@ -436,6 +441,7 @@ function bindProfileUI(){
 let ADMIN=false;
 function applyAdminUI(){
   document.querySelectorAll('.admin-only').forEach(el=>el.hidden=!ADMIN);
+  document.querySelectorAll('.normal-only').forEach(el=>el.hidden=ADMIN);
   const b=$('adminBtn'); b.textContent=ADMIN?'管理者（ログアウト）':'管理者'; b.classList.toggle('on',ADMIN);
 }
 function bindAdmin(){
