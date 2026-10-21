@@ -911,7 +911,7 @@ bindAdmin();
 bindFormatTab();
 renderIdBar();
 bindIdBar();
-loadLines(SAMPLE);
+LINES=[]; render();   // 起動時は空。PDF読込かサンプル読込で明細が入る
 showStep(1);
 loadProfilesGAS();   // GASに共有プリセットがあれば上書き
 loadFormatsGAS();    // 登録済みの仕入先書式を読み込む
