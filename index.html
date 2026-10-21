@@ -323,18 +323,15 @@
       </div>
       <p class="hint" id="fmtMsg"></p>
       <div id="fmtStage" hidden style="margin-top:12px">
-        <div class="row" id="fmtNums" style="gap:10px 14px;margin-bottom:10px">
-          <div class="f"><label><span style="color:#6a7383">●</span> 品名の左端</label><div class="numctl"><button type="button" class="nbtn" data-nk="name0" data-d="-5">−</button><input class="ncol" data-nk="name0" type="number"><button type="button" class="nbtn" data-nk="name0" data-d="5">＋</button></div></div>
-          <div class="f"><label><span style="color:#2f6fb0">●</span> 数量の左端</label><div class="numctl"><button type="button" class="nbtn" data-nk="qty0" data-d="-5">−</button><input class="ncol" data-nk="qty0" type="number"><button type="button" class="nbtn" data-nk="qty0" data-d="5">＋</button></div></div>
-          <div class="f"><label><span style="color:#9a5b00">●</span> 単位の左端</label><div class="numctl"><button type="button" class="nbtn" data-nk="unit0" data-d="-5">−</button><input class="ncol" data-nk="unit0" type="number"><button type="button" class="nbtn" data-nk="unit0" data-d="5">＋</button></div></div>
-          <div class="f"><label><span style="color:#0d6a49">●</span> 単価の左端</label><div class="numctl"><button type="button" class="nbtn" data-nk="price0" data-d="-5">−</button><input class="ncol" data-nk="price0" type="number"><button type="button" class="nbtn" data-nk="price0" data-d="5">＋</button></div></div>
-          <div class="f"><label><span style="color:#b23b3b">●</span> 金額の左端</label><div class="numctl"><button type="button" class="nbtn" data-nk="amount0" data-d="-5">−</button><input class="ncol" data-nk="amount0" type="number"><button type="button" class="nbtn" data-nk="amount0" data-d="5">＋</button></div></div>
+        <div class="row" style="margin-bottom:8px;align-items:center">
+          <button type="button" id="fmtRangeStart">範囲をドラッグで指定</button>
+          <span style="font-size:.82rem"><span style="color:#2f6fb0">■</span>品名　<span style="color:#9a5b00">■</span>数量　<span style="color:#0d6a49">■</span>単位　<span style="color:#b23b3b">■</span>単価</span>
         </div>
-        <div style="position:relative;overflow:auto;border:1px solid var(--line);border-radius:8px;max-height:55vh">
+        <div id="fmtStageInner" style="position:relative;overflow:auto;border:1px solid var(--line);border-radius:8px;max-height:60vh">
           <canvas id="fmtCanvas" style="display:block"></canvas>
-          <div id="fmtGuides" style="position:absolute;top:0;left:0;right:0;bottom:0;pointer-events:none"></div>
+          <div id="fmtBoxes" style="position:absolute;top:0;left:0;pointer-events:none"></div>
         </div>
-        <p class="hint">PDF上の線は、ラベルのところを掴んで左右にドラッグできます。数字の「−／＋」でも微調整できます。</p>
+        <p class="hint" id="fmtRangeHint">「範囲をドラッグで指定」を押して、品名→数量→単位→単価の順に、それぞれの列を横方向にドラッグして囲んでください（上下はどこでもOK、左右の位置だけ使います）。</p>
       </div>
       <div id="fmtPreview" hidden>
         <h2 style="margin-top:16px">抽出プレビュー（この境界での結果）</h2>
@@ -736,10 +733,16 @@ function clusterRows(words,tol){ tol=tol||4;
     else rows.push({top:w.top,items:[w]}); });
   return rows;
 }
-// 既定の列位置（この仕入先様式）。cols未指定時に使用
-const DEFAULT_COLS={name0:55, qty0:390, unit0:438, price0:475, amount0:538};
+// 既定の列位置（この仕入先様式）。範囲[左,右]で持つ
+const DEFAULT_COLS={name:[55,390], qty:[390,438], unit:[438,475], price:[475,538]};
+// 旧形式（name0,qty0…の境界）を範囲に変換
+function toRanges(c){
+  if(!c)return DEFAULT_COLS;
+  if(c.qty&&Array.isArray(c.qty))return c;  // すでに範囲
+  return {name:[c.name0,c.qty0], qty:[c.qty0,c.unit0], unit:[c.unit0,c.price0], price:[c.price0,c.amount0]};
+}
 function parsePage(words, cols){
-  const C=cols||DEFAULT_COLS;
+  const C=toRanges(cols);
   const out=[]; const rows=clusterRows(words);
   const band=(toks,a,b)=>toks.filter(w=>w.x0>=a&&w.x0<b).sort((x,y)=>x.x0-y.x0).map(w=>w.text);
   const info=[]; let started=false;
@@ -747,10 +750,10 @@ function parsePage(words, cols){
     const joined=r.items.slice().sort((a,b)=>a.x0-b.x0).map(w=>w.text).join('');
     if(!started){ if((joined.includes('No.')||joined.includes('品名'))&&joined.includes('数量'))started=true; info.push(['skip']); continue; }
     if(joined.includes('合計')||joined.includes('備考:')||/^\d+\/\d+$/.test(joined)){ info.push(['skip']); continue; }
-    let name=band(r.items,C.name0,C.qty0).join(' ').trim(); name=name.replace(/\s*(納期|実働).*$/,'').trim();
-    const qty=band(r.items,C.qty0,C.unit0).filter(t=>/^[\d,]+$/.test(t));
-    const unit=band(r.items,C.unit0,C.price0);
-    const price=band(r.items,C.price0,C.amount0).filter(t=>/^[\d,]+$/.test(t));
+    let name=band(r.items,C.name[0],C.name[1]).join(' ').trim(); name=name.replace(/\s*(納期|実働).*$/,'').trim();
+    const qty=band(r.items,C.qty[0],C.qty[1]).filter(t=>/^[\d,]+$/.test(t));
+    const unit=band(r.items,C.unit[0],C.unit[1]);
+    const price=band(r.items,C.price[0],C.price[1]).filter(t=>/^[\d,]+$/.test(t));
     const noise = name==='分割になります'||name.startsWith('※')||name.startsWith('(見積条件)')||name.startsWith('（見積条件');
     if(name.startsWith('【')) info.push(['sec',name]);
     else if(qty.length&&unit.length&&price.length) info.push(['num',name,unit[0],parseInt(qty[0].replace(/,/g,'')),parseInt(price[0].replace(/,/g,''))]);
@@ -922,11 +925,12 @@ let fmtWords=null, fmtScale=1, fmtCols=null;
 function renderFormatSel(){
   // 読み込み画面の仕入先セレクト
   const rs=$('readFormat'); if(rs){ const cur=rs.value;
-    rs.innerHTML='<option value="">自動（おまかせ）</option>'+FORMATS.map((f,i)=>`<option value="${i}">${esc(f.name)}</option>`).join('');
+    rs.innerHTML='<option value="">自動判別</option>'+FORMATS.map((f,i)=>`<option value="${i}">${esc(f.name)}</option>`).join('');
     rs.value=cur; }
   // 登録済みリスト
-  const tb=$('fmtList'); if(tb){ tb.innerHTML=FORMATS.map((f,i)=>{ const c=f.cols;
-    return `<tr><td class="l">${esc(f.name)}</td><td class="l mono">${c.name0}/${c.qty0}/${c.unit0}/${c.price0}/${c.amount0}</td><td><button class="delrow" data-fdel="${i}">×</button></td></tr>`;
+  const tb=$('fmtList'); if(tb){ tb.innerHTML=FORMATS.map((f,i)=>{ const c=toRanges(f.cols);
+    const s=k=>`${c[k][0]}–${c[k][1]}`;
+    return `<tr><td class="l">${esc(f.name)}</td><td class="l mono">品${s('name')} 数${s('qty')} 単${s('unit')} 価${s('price')}</td><td><button class="delrow" data-fdel="${i}">×</button></td></tr>`;
   }).join(''); }
 }
 async function fmtLoadPdf(file){
@@ -938,43 +942,52 @@ async function fmtLoadPdf(file){
   await page.render({canvasContext:cv.getContext('2d'),viewport:vp}).promise;
   const base=page.getViewport({scale:1}); const tc=await page.getTextContent();
   fmtWords=tc.items.filter(it=>it.str.trim()).map(it=>({x0:it.transform[4],top:base.height-it.transform[5],text:it.str.trim()}));
-  fmtCols=Object.assign({},detectCols(fmtWords)||DEFAULT_COLS);
+  fmtCols=JSON.parse(JSON.stringify(toRanges(detectCols(fmtWords))));
   $('fmtStage').hidden=false; $('fmtPreview').hidden=false;
-  $('fmtMsg').textContent=detectCols(fmtWords)?'列を自動推測しました。ズレていたら数値か線で微調整してください。':'自動推測できなかったので既定値です。数値か線で調整してください。';
-  drawGuides(); syncNums(); fmtPreview();
+  $('fmtMsg').textContent=detectCols(fmtWords)?'列を自動で囲みました。ズレていたら「範囲をドラッグで指定」で囲み直せます。':'自動で囲めませんでした。「範囲をドラッグで指定」で各列を囲んでください。';
+  drawBoxes(); fmtPreview();
 }
-const GUIDE=[['name0','#6a7383','品名'],['qty0','#2f6fb0','数量'],['unit0','#9a5b00','単位'],['price0','#0d6a49','単価'],['amount0','#b23b3b','金額']];
-function drawGuides(){
-  const g=$('fmtGuides'); const h=$('fmtCanvas').height; g.innerHTML='';
-  GUIDE.forEach(([k,color,label],idx)=>{
-    const grab=document.createElement('div'); grab.className='guide-grab'; grab.dataset.k=k;
-    grab.style.left=(fmtCols[k]*fmtScale)+'px'; grab.style.height=h+'px';
-    const line=document.createElement('div'); line.className='guide-line'; line.style.height=h+'px'; line.style.background=color;
-    const tag=document.createElement('div'); tag.className='guide-tag'; tag.style.background=color; tag.textContent=label;
-    tag.style.top=(2+idx*16)+'px';   // ラベルを縦にずらして重なり回避
-    grab.appendChild(line); grab.appendChild(tag);
-    g.appendChild(grab);
+// 列ごとの色付き四角を描画
+const COLDEF=[['name','#2f6fb0','品名'],['qty','#9a5b00','数量'],['unit','#0d6a49','単位'],['price','#b23b3b','単価']];
+function drawBoxes(){
+  const g=$('fmtBoxes'); const h=$('fmtCanvas').height; g.innerHTML='';
+  COLDEF.forEach(([k,color,label])=>{
+    const r=fmtCols[k]; if(!r)return;
+    const d=document.createElement('div');
+    d.style.cssText=`position:absolute;top:0;height:${h}px;left:${r[0]*fmtScale}px;width:${(r[1]-r[0])*fmtScale}px;background:${color}22;border-left:2px solid ${color};border-right:2px solid ${color};box-sizing:border-box`;
+    const tag=document.createElement('div'); tag.textContent=label;
+    tag.style.cssText=`position:absolute;top:2px;left:0;font-size:10px;font-weight:700;color:#fff;background:${color};padding:1px 4px;border-radius:0 0 4px 0`;
+    d.appendChild(tag); g.appendChild(d);
   });
 }
-function syncNums(){ document.querySelectorAll('.ncol').forEach(inp=>{ inp.value=fmtCols[inp.dataset.nk]; }); }
-function setCol(k,v){ v=Math.max(0,Math.min(Math.round(v),$('fmtCanvas').width/fmtScale)); fmtCols[k]=v; drawGuides(); syncNums(); fmtPreview(); }
 function fmtPreview(){
   const rows=parsePage(fmtWords,fmtCols).filter(r=>r[0]==='item');
   $('fmtRows').innerHTML=rows.map(r=>`<tr><td class="l">${esc(r[1])}</td><td>${r[3]}</td><td>${esc(r[2])}</td><td>${(r[4]).toLocaleString('ja-JP')}</td></tr>`).join('')
-    || '<tr><td colspan="4" class="l" style="color:var(--muted)">この境界では明細を検出できません。線を調整してください。</td></tr>';
+    || '<tr><td colspan="4" class="l" style="color:var(--muted)">この範囲では明細を検出できません。囲み直してください。</td></tr>';
 }
+// 範囲ドラッグ（品名→数量→単位→単価の順に各列を囲む）
+const RANGE_SEQ=[['name','品名'],['qty','数量'],['unit','単位'],['price','単価']];
+let rangeMode=false, rangeIdx=0, rStartX=null, rubber=null;
+function startRange(){ if(!fmtWords){toast('先にPDFを読み込んでください');return;} rangeMode=true; rangeIdx=0; promptRange(); }
+function promptRange(){ $('fmtRangeHint').innerHTML=`<b>範囲指定（${rangeIdx+1}/4）：</b>「<b style="color:var(--accent)">${RANGE_SEQ[rangeIdx][1]}</b>」の列を横方向にドラッグで囲んでください`; }
 function bindFormatTab(){
   $('fmtPdf').addEventListener('change',e=>{ const f=e.target.files[0]; if(f)fmtLoadPdf(f); e.target.value=''; });
-  // 数値入力での調整
-  $('fmtNums').addEventListener('click',e=>{ if(e.target.classList.contains('nbtn')){ setCol(e.target.dataset.nk, (fmtCols[e.target.dataset.nk]||0)+(+e.target.dataset.d)); } });
-  $('fmtNums').addEventListener('input',e=>{ if(e.target.classList.contains('ncol')){ const v=parseInt(e.target.value); if(!isNaN(v))setCol(e.target.dataset.nk,v); } });
-  // 境界線ドラッグ（ラベル付きグラブで掴みやすく）
-  let drag=null;
-  $('fmtGuides').addEventListener('pointerdown',e=>{ const g=e.target.closest('.guide-grab'); if(g){ drag=g.dataset.k; g.setPointerCapture(e.pointerId); e.preventDefault(); } });
-  $('fmtGuides').addEventListener('pointermove',e=>{ if(!drag)return;
-    const rect=$('fmtCanvas').getBoundingClientRect(); let x=(e.clientX-rect.left); x=Math.max(0,Math.min(x,$('fmtCanvas').width));
-    setCol(drag, x/fmtScale); });
-  $('fmtGuides').addEventListener('pointerup',()=>{ drag=null; });
+  $('fmtRangeStart').addEventListener('click',startRange);
+  const inner=$('fmtStageInner'); const cv=$('fmtCanvas');
+  const localX=e=>{ const rect=cv.getBoundingClientRect(); return Math.max(0,Math.min(e.clientX-rect.left,cv.width)); };
+  cv.addEventListener('pointerdown',e=>{ if(!rangeMode)return; rStartX=localX(e); cv.setPointerCapture(e.pointerId); e.preventDefault();
+    rubber=document.createElement('div'); rubber.style.cssText=`position:absolute;top:0;height:${cv.height}px;background:#2f6fb033;border:2px solid var(--accent);left:${rStartX}px;width:0`; $('fmtBoxes').appendChild(rubber); });
+  cv.addEventListener('pointermove',e=>{ if(!rangeMode||rStartX==null||!rubber)return; const x=localX(e);
+    rubber.style.left=Math.min(rStartX,x)+'px'; rubber.style.width=Math.abs(x-rStartX)+'px'; });
+  cv.addEventListener('pointerup',e=>{ if(!rangeMode||rStartX==null)return; const x=localX(e);
+    const a=Math.round(Math.min(rStartX,x)/fmtScale), b=Math.round(Math.max(rStartX,x)/fmtScale);
+    rStartX=null; if(rubber){rubber.remove();rubber=null;}
+    if(b-a<4){ promptRange(); return; }  // 誤クリック無視
+    fmtCols[RANGE_SEQ[rangeIdx][0]]=[a,b];
+    rangeIdx++; drawBoxes(); fmtPreview();
+    if(rangeIdx>=RANGE_SEQ.length){ rangeMode=false; $('fmtRangeHint').textContent='範囲を指定しました。プレビューを確認して、会社名を入れて保存してください。'; toast('範囲指定が完了しました'); }
+    else promptRange();
+  });
   $('fmtSave').addEventListener('click',async()=>{
     const name=($('fmtName').value||'').trim(); if(!name){ toast('会社名を入れてください'); return; }
     if(!fmtCols){ toast('先にPDFを読み込んでください'); return; }
