@@ -135,6 +135,7 @@
     <button type="button" class="tab" data-t="1"><span class="n">1</span>取り込み</button>
     <button type="button" class="tab" data-t="2"><span class="n">2</span>金額と品チェック</button>
     <button type="button" class="tab" data-t="3"><span class="n">3</span>CSV起こす</button>
+    <button type="button" class="tab admin-only" data-t="4" id="tabFormat" hidden><span class="n">⚙</span>書式登録</button>
   </div>
 
   <section class="step" id="step1">
@@ -170,11 +171,12 @@
   <div class="card">
     <h2>① 見積を読み込む</h2>
     <div class="row">
-      <span class="filebtn"><button type="button">PDFを読み込む（β）</button><input type="file" id="pdfIn" accept="application/pdf"></span>
-      <button type="button" class="ghost" id="loadSample">常宏サンプルを読込</button>
+      <span class="filebtn"><button type="button">PDFを読み込む</button><input type="file" id="pdfIn" accept="application/pdf"></span>
+      <button type="button" class="ghost" id="loadSample">サンプルを読込</button>
       <button type="button" class="ghost" id="addRow">＋ 明細行を追加</button>
+      <div class="f"><label>書式（通常は自動判別）</label><select id="readFormat" style="min-width:150px"><option value="">自動判別</option></select></div>
     </div>
-    <p class="hint">PDF読込は常宏フォーマット向けのβ版です。読み込んだら明細は表で直接直せます。うまく取れない時はサンプル読込や手入力で。</p>
+    <p class="hint">PDFを読み込むと仕入先を自動で判別して解析します（登録済みの会社は電話番号で識別）。うまくいかない時だけ、右の「書式」で会社を手動指定してください。読み込んだ明細は表で直接直せます。</p>
   </div>
 
   <!-- 商品台帳マスタ登録 -->
@@ -290,6 +292,37 @@
     <p class="hint">※ 得意先コード・見積番号・商品コードが弥生に実在しないとエラーになります。エラーが出たらそこを確認してください。</p>
   </div>
   <div class="stepnav"><button type="button" class="ghost" data-go="2">◀ 戻る</button><span></span></div>
+  </section>
+
+  <!-- 書式登録（管理者専用） -->
+  <section class="step" id="step4" hidden>
+    <div class="card">
+      <h2>仕入先の書式を登録</h2>
+      <p class="hint" style="margin-top:0">見積PDFを読み込むと、列（品名・数量・単位・単価・金額）を自動で推測します。色の境界線をドラッグで微調整し、会社名を付けて保存してください。次回からその会社を選ぶと正確に読み込めます。</p>
+      <div class="row" style="margin-top:10px">
+        <div class="f"><label>会社名（仕入先）</label><input class="m" id="fmtName" placeholder="例：常宏"></div>
+        <span class="filebtn"><button type="button">見積PDFを読み込む</button><input type="file" id="fmtPdf" accept="application/pdf"></span>
+        <button type="button" id="fmtSave">この書式を保存</button>
+      </div>
+      <p class="hint" id="fmtMsg"></p>
+      <div id="fmtStage" hidden style="margin-top:12px">
+        <div style="position:relative;overflow:auto;border:1px solid var(--line);border-radius:8px;max-height:60vh">
+          <canvas id="fmtCanvas" style="display:block"></canvas>
+          <div id="fmtGuides" style="position:absolute;top:0;left:0;right:0;bottom:0;pointer-events:none"></div>
+        </div>
+        <p class="hint">境界線：<span style="color:#2f6fb0">■</span>品名↔数量　<span style="color:#9a5b00">■</span>数量↔単位　<span style="color:#0d6a49">■</span>単位↔単価　<span style="color:#b23b3b">■</span>単価↔金額（ドラッグで移動）</p>
+      </div>
+      <div id="fmtPreview" hidden>
+        <h2 style="margin-top:16px">抽出プレビュー（この境界での結果）</h2>
+        <div class="tablewrap"><table style="min-width:520px"><thead><tr><th class="l">品名</th><th>数量</th><th>単位</th><th>単価</th></tr></thead><tbody id="fmtRows"></tbody></table></div>
+      </div>
+    </div>
+
+    <div class="card">
+      <h2>登録済みの書式</h2>
+      <div class="tablewrap"><table style="min-width:420px"><thead><tr><th class="l">会社名</th><th class="l">列位置(品/数/単位/単価/金額)</th><th></th></tr></thead><tbody id="fmtList"></tbody></table></div>
+    </div>
+    <div class="stepnav"><button type="button" class="ghost" data-go="1">◀ 戻る</button><span></span></div>
   </section>
 </div>
 <div class="toast" id="toast"></div>
@@ -592,17 +625,29 @@ $('pdfIn').addEventListener('change',async e=>{
   const file=e.target.files[0]; if(!file)return; toast('PDF解析中…',true);
   try{
     const buf=await file.arrayBuffer(); const pdf=await pdfjsLib.getDocument({data:buf}).promise;
-    let parsed=[];
+    let parsed=[]; const PAGES=[];
     for(let p=1;p<=pdf.numPages;p++){
       const page=await pdf.getPage(p); const vp=page.getViewport({scale:1});
       const tc=await page.getTextContent();
       // pdf.jsは左下原点 → top(上からの距離)に変換してpdfplumberと揃える
       const words=tc.items.filter(it=>it.str.trim()).map(it=>({
         x0:it.transform[4], top:vp.height-it.transform[5], text:it.str.trim() }));
-      parsed=parsed.concat(parsePage(words));
+      PAGES.push(words);
     }
-    if(parsed.some(r=>r[0]==='item')){ loadLines(parsed); toastDone(`明細 ${parsed.filter(r=>r[0]==='item').length} 件を読込`); }
-    else toastDone('明細を自動抽出できませんでした。サンプル読込か手入力で。');
+    // 手動選択があればそれ。無ければ①電話番号で会社を自動判別→②自動推測→③汎用
+    const fsel=$('readFormat');
+    let fmt=fsel&&fsel.value!==''?FORMATS[+fsel.value]:matchFormat(PAGES[0]);
+    let mode='';
+    const run=cols=>{ let a=[]; PAGES.forEach(w=>{a=a.concat(parsePage(w,cols));}); return a; };
+    if(fmt){ parsed=run(fmt.cols); mode=fmt.name+'（自動判別）'; }
+    else{ parsed=run(null); mode='既定様式';
+      if(!parsed.some(r=>r[0]==='item')){ const c=detectCols(PAGES[0]); if(c){ parsed=run(c); mode='自動推測'; } } }
+    let generic=false;
+    if(!parsed.some(r=>r[0]==='item')){ parsed=[]; PAGES.forEach(w=>{parsed=parsed.concat(parseGeneric(w));}); generic=true; mode='汎用'; }
+    if(parsed.some(r=>r[0]==='item')){ loadLines(parsed);
+      const n=parsed.filter(r=>r[0]==='item').length;
+      toastDone(generic?`明細 ${n} 件を自動抽出（要確認）`:`明細 ${n} 件を読込（${mode}）`); }
+    else toastDone('明細を自動抽出できませんでした。手入力で。');
   }catch(err){ toastDone('PDF解析に失敗しました'); console.error(err); }
   e.target.value='';
 });
@@ -614,18 +659,21 @@ function clusterRows(words,tol){ tol=tol||4;
     else rows.push({top:w.top,items:[w]}); });
   return rows;
 }
-function parsePage(words){
+// 既定の列位置（この仕入先様式）。cols未指定時に使用
+const DEFAULT_COLS={name0:55, qty0:390, unit0:438, price0:475, amount0:538};
+function parsePage(words, cols){
+  const C=cols||DEFAULT_COLS;
   const out=[]; const rows=clusterRows(words);
   const band=(toks,a,b)=>toks.filter(w=>w.x0>=a&&w.x0<b).sort((x,y)=>x.x0-y.x0).map(w=>w.text);
   const info=[]; let started=false;
   for(const r of rows){
     const joined=r.items.slice().sort((a,b)=>a.x0-b.x0).map(w=>w.text).join('');
-    if(!started){ if(joined.includes('No.')&&joined.includes('数量'))started=true; info.push(['skip']); continue; }
+    if(!started){ if((joined.includes('No.')||joined.includes('品名'))&&joined.includes('数量'))started=true; info.push(['skip']); continue; }
     if(joined.includes('合計')||joined.includes('備考:')||/^\d+\/\d+$/.test(joined)){ info.push(['skip']); continue; }
-    let name=band(r.items,55,390).join(' ').trim(); name=name.replace(/\s*(納期|実働).*$/,'').trim();
-    const qty=band(r.items,390,438).filter(t=>/^[\d,]+$/.test(t));
-    const unit=band(r.items,438,475);
-    const price=band(r.items,475,538).filter(t=>/^[\d,]+$/.test(t));
+    let name=band(r.items,C.name0,C.qty0).join(' ').trim(); name=name.replace(/\s*(納期|実働).*$/,'').trim();
+    const qty=band(r.items,C.qty0,C.unit0).filter(t=>/^[\d,]+$/.test(t));
+    const unit=band(r.items,C.unit0,C.price0);
+    const price=band(r.items,C.price0,C.amount0).filter(t=>/^[\d,]+$/.test(t));
     const noise = name==='分割になります'||name.startsWith('※')||name.startsWith('(見積条件)')||name.startsWith('（見積条件');
     if(name.startsWith('【')) info.push(['sec',name]);
     else if(qty.length&&unit.length&&price.length) info.push(['num',name,unit[0],parseInt(qty[0].replace(/,/g,'')),parseInt(price[0].replace(/,/g,''))]);
@@ -641,6 +689,76 @@ function parsePage(words){
       if(full&&t[4]>0) out.push(['item',full,t[2],t[3],t[4]]);
     }
   });
+  return out;
+}
+
+// PDFから電話番号（発行元の目印）を抽出
+function telDigits(words){
+  const t=(words||[]).map(w=>w.text).join(' ');
+  // 区切り（ハイフン等）必須で電話番号だけ拾う（見積Noなど区切り無しの数字は除外）
+  const m=t.match(/0\d{1,3}[-‐－]\d{2,4}[-‐－]?\d{3,4}/g)||[];
+  return [...new Set(m.map(x=>x.replace(/[-‐－\s]/g,'')))].filter(x=>x.length>=10);
+}
+// 登録済み書式の中から、PDFの電話番号で会社を自動判別
+function matchFormat(words){
+  const tels=telDigits(words); if(!tels.length)return null;
+  return FORMATS.find(f=>Array.isArray(f.sig)&&f.sig.some(s=>tels.includes(s)))||null;
+}
+
+// ヘッダ行（品名/数量/単位/単価/金額）から列位置を自動推測
+function detectCols(words){
+  const rows=clusterRows(words);
+  for(const r of rows){
+    const toks=r.items.slice().sort((a,b)=>a.x0-b.x0);
+    const j=toks.map(t=>t.text).join('');
+    if(j.includes('数量')&&(j.includes('単価')||j.includes('金額'))){
+      const find=k=>{ const t=toks.find(w=>w.text===k); return t?Math.round(t.x0):null; };
+      const name0=find('品名'), qty0=find('数量'), unit0=find('単位'), price0=find('単価'), amount0=find('金額');
+      if(qty0&&unit0&&price0&&amount0) return {name0:name0||55, qty0, unit0, price0, amount0};
+    }
+  }
+  return null;
+}
+
+// 会社ごとの書式（GAS保存）。{name, cols:{name0,qty0,unit0,price0,amount0}}
+let FORMATS=[];
+async function loadFormatsGAS(){
+  if(!GAS_URL)return;
+  try{ const r=await fetch(GAS_URL,{method:'POST',headers:{'Content-Type':'text/plain;charset=utf-8'},body:JSON.stringify({action:'getFormats'})});
+    const j=await r.json(); if(j&&j.ok){ FORMATS=j.formats||[]; renderFormatSel(); } }catch(_){}
+}
+async function saveFormatsGAS(){
+  if(!GAS_URL){ toast('GAS未接続のため保存できません'); return false; }
+  try{ const r=await fetch(GAS_URL,{method:'POST',headers:{'Content-Type':'text/plain;charset=utf-8'},body:JSON.stringify({action:'saveFormats',formats:FORMATS})});
+    const j=await r.json(); return !!j.ok; }catch(_){ return false; }
+}
+
+// 汎用解析（列位置に頼らず「単位＋数字」の並びで拾う。未知の書式向け）
+const UNITS=['組','枚','台','本','個','式','ｍ3','ｍ2','m3','m2','kg','ｋｇ','袋','缶','箱','巻','ｍ','m','ℓ','L','本','冊'];
+function parseGeneric(words){
+  const out=[]; const rows=clusterRows(words); let prevName='',started=false;
+  const isNum=t=>/^[\d,]+$/.test(t);
+  for(const r of rows){
+    const toks=r.items.slice().sort((a,b)=>a.x0-b.x0).map(w=>w.text);
+    const joined=toks.join('');
+    if(!started){ if(joined.includes('数量')&&(joined.includes('単価')||joined.includes('金額')))started=true; continue; }
+    if(joined.includes('合計')||joined.includes('備考:')||/^\d+\/\d+$/.test(joined)) continue;
+    const ui=toks.findIndex(t=>UNITS.indexOf(t)>=0);
+    if(ui>=0){
+      const after=toks.slice(ui+1).filter(isNum), before=toks.slice(0,ui).filter(isNum);
+      if(after.length&&before.length){
+        const qty=parseInt(before[before.length-1].replace(/,/g,'')), cost=parseInt(after[0].replace(/,/g,''));
+        let name=toks.slice(0,ui).filter(t=>!isNum(t)).join(' ');
+        name=(prevName+' '+name).replace(/\s*(納期|実働).*/,'').replace(/^\d+\s*/,'').replace(/\s+/g,' ').trim();
+        if(cost>0&&qty>0&&name.length>=2) out.push(['item',name,toks[ui],qty,cost]);
+        prevName=''; continue;
+      }
+    }
+    // 数字のない文字行＝品名候補として保持
+    const txt=toks.filter(t=>!isNum(t)&&UNITS.indexOf(t)<0).join(' ').trim();
+    if(/^【.*】/.test(txt)){ out.push(['sec',txt.match(/【.*?】/)[0],'',0,0]); prevName=''; }
+    else if(txt&&!txt.startsWith('※')&&txt.indexOf('分割')<0) prevName=txt;
+  }
   return out;
 }
 
@@ -704,11 +822,12 @@ $('masterIn').addEventListener('change',async e=>{
 let curStep=1;
 function showStep(n){
   const back = n<curStep;
-  [1,2,3].forEach(i=>{
+  [1,2,3,4].forEach(i=>{
     const sec=$('step'+i), tab=document.querySelector('.tab[data-t="'+i+'"]');
+    if(!sec||!tab)return;
     sec.hidden=(i!==n);
     tab.classList.toggle('active',i===n);
-    tab.classList.toggle('done', i<n);   // 通過済みタブは緑チェック色
+    tab.classList.toggle('done', n<4 && i<n);
   });
   const sec=$('step'+n);
   sec.classList.remove('anim-fwd','anim-back'); void sec.offsetWidth;
@@ -720,6 +839,68 @@ function showStep(n){
 document.querySelectorAll('.tab').forEach(t=>t.addEventListener('click',()=>showStep(+t.dataset.t)));
 document.querySelectorAll('[data-go]').forEach(b=>b.addEventListener('click',()=>showStep(+b.dataset.go)));
 
+// ===== 書式登録タブ =====
+let fmtWords=null, fmtScale=1, fmtCols=null;
+function renderFormatSel(){
+  // 読み込み画面の仕入先セレクト
+  const rs=$('readFormat'); if(rs){ const cur=rs.value;
+    rs.innerHTML='<option value="">自動（おまかせ）</option>'+FORMATS.map((f,i)=>`<option value="${i}">${esc(f.name)}</option>`).join('');
+    rs.value=cur; }
+  // 登録済みリスト
+  const tb=$('fmtList'); if(tb){ tb.innerHTML=FORMATS.map((f,i)=>{ const c=f.cols;
+    return `<tr><td class="l">${esc(f.name)}</td><td class="l mono">${c.name0}/${c.qty0}/${c.unit0}/${c.price0}/${c.amount0}</td><td><button class="delrow" data-fdel="${i}">×</button></td></tr>`;
+  }).join(''); }
+}
+async function fmtLoadPdf(file){
+  $('fmtMsg').textContent='PDF解析中…';
+  const buf=await file.arrayBuffer(); const pdf=await pdfjsLib.getDocument({data:buf}).promise;
+  const page=await pdf.getPage(1);
+  fmtScale=1.3; const vp=page.getViewport({scale:fmtScale});
+  const cv=$('fmtCanvas'); cv.width=vp.width; cv.height=vp.height;
+  await page.render({canvasContext:cv.getContext('2d'),viewport:vp}).promise;
+  const base=page.getViewport({scale:1}); const tc=await page.getTextContent();
+  fmtWords=tc.items.filter(it=>it.str.trim()).map(it=>({x0:it.transform[4],top:base.height-it.transform[5],text:it.str.trim()}));
+  fmtCols=Object.assign({},detectCols(fmtWords)||DEFAULT_COLS);
+  $('fmtStage').hidden=false; $('fmtPreview').hidden=false;
+  $('fmtMsg').textContent=detectCols(fmtWords)?'列を自動推測しました。境界線をドラッグで微調整できます。':'自動推測できなかったので既定値です。境界線を調整してください。';
+  drawGuides(); fmtPreview();
+}
+const GUIDE=[['name0','#6a7383'],['qty0','#2f6fb0'],['unit0','#9a5b00'],['price0','#0d6a49'],['amount0','#b23b3b']];
+function drawGuides(){
+  const g=$('fmtGuides'); const h=$('fmtCanvas').height; g.innerHTML='';
+  GUIDE.forEach(([k,color])=>{
+    const d=document.createElement('div'); d.dataset.k=k;
+    d.style.cssText=`position:absolute;top:0;height:${h}px;width:3px;background:${color};left:${fmtCols[k]*fmtScale}px;cursor:ew-resize;pointer-events:auto;opacity:.8`;
+    g.appendChild(d);
+  });
+}
+function fmtPreview(){
+  const rows=parsePage(fmtWords,fmtCols).filter(r=>r[0]==='item');
+  $('fmtRows').innerHTML=rows.map(r=>`<tr><td class="l">${esc(r[1])}</td><td>${r[3]}</td><td>${esc(r[2])}</td><td>${(r[4]).toLocaleString('ja-JP')}</td></tr>`).join('')
+    || '<tr><td colspan="4" class="l" style="color:var(--muted)">この境界では明細を検出できません。線を調整してください。</td></tr>';
+}
+function bindFormatTab(){
+  $('fmtPdf').addEventListener('change',e=>{ const f=e.target.files[0]; if(f)fmtLoadPdf(f); e.target.value=''; });
+  // 境界線ドラッグ
+  let drag=null;
+  $('fmtGuides').addEventListener('pointerdown',e=>{ if(e.target.dataset.k){ drag=e.target.dataset.k; e.target.setPointerCapture(e.pointerId); } });
+  $('fmtGuides').addEventListener('pointermove',e=>{ if(!drag)return;
+    const rect=$('fmtCanvas').getBoundingClientRect(); let x=(e.clientX-rect.left); x=Math.max(0,Math.min(x,$('fmtCanvas').width));
+    fmtCols[drag]=Math.round(x/fmtScale); drawGuides(); fmtPreview(); });
+  $('fmtGuides').addEventListener('pointerup',()=>{ drag=null; });
+  $('fmtSave').addEventListener('click',async()=>{
+    const name=($('fmtName').value||'').trim(); if(!name){ toast('会社名を入れてください'); return; }
+    if(!fmtCols){ toast('先にPDFを読み込んでください'); return; }
+    const i=FORMATS.findIndex(f=>f.name===name);
+    const rec={name,cols:Object.assign({},fmtCols),sig:telDigits(fmtWords)};
+    if(i>=0)FORMATS[i]=rec; else FORMATS.push(rec);
+    toast('保存中…',true); const ok=await saveFormatsGAS();
+    renderFormatSel(); toastDone(ok?`書式「${name}」を保存しました`:'GAS保存に失敗（接続を確認）');
+  });
+  $('fmtList').addEventListener('click',async e=>{ if(e.target.dataset.fdel!==undefined){
+    if(!confirm('この書式を削除しますか？'))return; FORMATS.splice(+e.target.dataset.fdel,1); await saveFormatsGAS(); renderFormatSel(); toast('削除しました'); } });
+}
+
 // 初期化
 loadProfilesLocal();
 if(hashName())setMyName(hashName());       // URLで来たら端末にも記憶
@@ -727,9 +908,11 @@ selectProfileByName(getMyName());  // この端末の担当者を優先
 renderProfiles();
 bindProfileUI();
 bindAdmin();
+bindFormatTab();
 renderIdBar();
 bindIdBar();
 loadLines(SAMPLE);
 showStep(1);
 loadProfilesGAS();   // GASに共有プリセットがあれば上書き
+loadFormatsGAS();    // 登録済みの仕入先書式を読み込む
 </script>
