@@ -25,6 +25,7 @@
     --new:#e07878; --new-soft:#2a1818; color-scheme:dark;
   }
   *{box-sizing:border-box}
+  [hidden]{display:none!important}
   body{background:var(--bg);color:var(--fg);font-family:var(--font);line-height:1.5}
   .wrap{max-width:1120px;margin:0 auto;padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px));padding-block:22px}
   h1{font-size:1.2rem;margin:0 0 2px}
@@ -142,7 +143,8 @@
     <h1>見積変換ツール</h1>
     <button type="button" id="adminBtn" class="adminlink">管理者</button>
   </div>
-  <p class="lead">仕入先の見積 → マージン計算 → 商品台帳の名寄せ → 弥生販売「取引インポート」用CSVを生成。</p>
+  <p class="lead">仕入先の見積 → マージン計算 → 商品台帳の名寄せ → 弥生販売「取引インポート」用の取込ファイルを出力。</p>
+  <p class="lead normal-only" id="adminGuide" style="margin-top:-10px">右上の「管理者」でログインすると、書式や担当者の設定ができます。</p>
 
   <div class="tabs">
     <button type="button" class="tab" data-t="1"><span class="n">1</span>取り込み</button>
