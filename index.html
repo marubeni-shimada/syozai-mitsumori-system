@@ -323,9 +323,13 @@
       </div>
       <p class="hint" id="fmtMsg"></p>
       <div id="fmtStage" hidden style="margin-top:12px">
-        <div class="row" style="margin-bottom:8px;align-items:center">
-          <button type="button" id="fmtRangeStart">範囲をドラッグで指定</button>
-          <span style="font-size:.82rem"><span style="color:#2f6fb0">■</span>品名　<span style="color:#9a5b00">■</span>数量　<span style="color:#0d6a49">■</span>単位　<span style="color:#b23b3b">■</span>単価</span>
+        <div class="row" style="margin-bottom:8px;align-items:center;gap:8px 10px">
+          <button type="button" id="fmtRangeStart">まとめて範囲指定</button>
+          <span class="hint" style="margin:0">個別に直す：</span>
+          <button type="button" class="ghost sm" data-only="name" style="color:#2f6fb0">品名</button>
+          <button type="button" class="ghost sm" data-only="qty" style="color:#9a5b00">数量</button>
+          <button type="button" class="ghost sm" data-only="unit" style="color:#0d6a49">単位</button>
+          <button type="button" class="ghost sm" data-only="price" style="color:#b23b3b">単価</button>
         </div>
         <div id="fmtStageInner" style="position:relative;overflow:auto;border:1px solid var(--line);border-radius:8px;max-height:60vh">
           <canvas id="fmtCanvas" style="display:block"></canvas>
@@ -965,14 +969,17 @@ function fmtPreview(){
   $('fmtRows').innerHTML=rows.map(r=>`<tr><td class="l">${esc(r[1])}</td><td>${r[3]}</td><td>${esc(r[2])}</td><td>${(r[4]).toLocaleString('ja-JP')}</td></tr>`).join('')
     || '<tr><td colspan="4" class="l" style="color:var(--muted)">この範囲では明細を検出できません。囲み直してください。</td></tr>';
 }
-// 範囲ドラッグ（品名→数量→単位→単価の順に各列を囲む）
-const RANGE_SEQ=[['name','品名'],['qty','数量'],['unit','単位'],['price','単価']];
-let rangeMode=false, rangeIdx=0, rStartX=null, rubber=null;
-function startRange(){ if(!fmtWords){toast('先にPDFを読み込んでください');return;} rangeMode=true; rangeIdx=0; promptRange(); }
-function promptRange(){ $('fmtRangeHint').innerHTML=`<b>範囲指定（${rangeIdx+1}/4）：</b>「<b style="color:var(--accent)">${RANGE_SEQ[rangeIdx][1]}</b>」の列を横方向にドラッグで囲んでください`; }
+// 範囲ドラッグ（指定した列を順に囲む。SEQは全列 or 単列）
+const COL_LABEL={name:'品名',qty:'数量',unit:'単位',price:'単価'};
+const ALL_SEQ=['name','qty','unit','price'];
+let rangeMode=false, rangeSeq=[], rangeIdx=0, rStartX=null, rubber=null;
+function startRange(seq){ if(!fmtWords){toast('先にPDFを読み込んでください');return;} rangeSeq=seq||ALL_SEQ.slice(); rangeMode=true; rangeIdx=0; promptRange(); }
+function promptRange(){ const k=rangeSeq[rangeIdx];
+  $('fmtRangeHint').innerHTML=`<b>範囲指定（${rangeIdx+1}/${rangeSeq.length}）：</b>「<b style="color:var(--accent)">${COL_LABEL[k]}</b>」の列を横方向にドラッグで囲んでください`; }
 function bindFormatTab(){
   $('fmtPdf').addEventListener('change',e=>{ const f=e.target.files[0]; if(f)fmtLoadPdf(f); e.target.value=''; });
-  $('fmtRangeStart').addEventListener('click',startRange);
+  $('fmtRangeStart').addEventListener('click',()=>startRange());
+  document.querySelectorAll('[data-only]').forEach(b=>b.addEventListener('click',()=>startRange([b.dataset.only])));
   const inner=$('fmtStageInner'); const cv=$('fmtCanvas');
   const localX=e=>{ const rect=cv.getBoundingClientRect(); return Math.max(0,Math.min(e.clientX-rect.left,cv.width)); };
   cv.addEventListener('pointerdown',e=>{ if(!rangeMode)return; rStartX=localX(e); cv.setPointerCapture(e.pointerId); e.preventDefault();
@@ -983,9 +990,9 @@ function bindFormatTab(){
     const a=Math.round(Math.min(rStartX,x)/fmtScale), b=Math.round(Math.max(rStartX,x)/fmtScale);
     rStartX=null; if(rubber){rubber.remove();rubber=null;}
     if(b-a<4){ promptRange(); return; }  // 誤クリック無視
-    fmtCols[RANGE_SEQ[rangeIdx][0]]=[a,b];
+    fmtCols[rangeSeq[rangeIdx]]=[a,b];
     rangeIdx++; drawBoxes(); fmtPreview();
-    if(rangeIdx>=RANGE_SEQ.length){ rangeMode=false; $('fmtRangeHint').textContent='範囲を指定しました。プレビューを確認して、会社名を入れて保存してください。'; toast('範囲指定が完了しました'); }
+    if(rangeIdx>=rangeSeq.length){ rangeMode=false; $('fmtRangeHint').textContent='範囲を指定しました。プレビューを確認して、会社名を入れて保存してください。'; toast('範囲指定が完了しました'); }
     else promptRange();
   });
   $('fmtSave').addEventListener('click',async()=>{
