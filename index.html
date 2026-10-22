@@ -205,19 +205,19 @@
 
   <!-- 商品台帳マスタ登録（管理者のみ） -->
   <div class="card admin-only" hidden>
-    <h2>商品台帳マスタ（GAS）</h2>
+    <h2>商品台帳マスタ（スプレッドシート）</h2>
     <div class="row">
-      <span class="filebtn"><button type="button">マスタ取り込み（GASへ登録）</button><input type="file" id="masterIn" accept=".xlsx,.xls,.txt,.csv"></span>
+      <span class="filebtn"><button type="button">マスタ取り込み（スプレッドシートへ登録）</button><input type="file" id="masterIn" accept=".xlsx,.xls,.txt,.csv"></span>
       <span class="hint" id="masterStat">内蔵マスタ使用中（グレーチング705件）</span>
     </div>
-    <p class="hint">弥生でエクスポートした商品台帳CSV（A列コード・B列商品名・E列単位）をアップロードすると、GASのスプレッドシート「商品台帳」に自動登録します。登録後は全件で名寄せします。</p>
+    <p class="hint">弥生でエクスポートした商品台帳CSV（A列コード・B列商品名・E列単位）をアップロードすると、スプレッドシートの「商品台帳」シートに登録します。登録後は全件で名寄せします。</p>
   </div>
 
   <!-- 得意先台帳マスタ登録（管理者のみ） -->
   <div class="card admin-only" hidden>
-    <h2>得意先台帳マスタ（GAS）</h2>
+    <h2>得意先台帳マスタ（スプレッドシート）</h2>
     <div class="row">
-      <span class="filebtn"><button type="button">得意先台帳を取り込み（GASへ登録）</button><input type="file" id="tokuiIn" accept=".xlsx,.xls,.txt,.csv"></span>
+      <span class="filebtn"><button type="button">得意先台帳を取り込み（スプレッドシートへ登録）</button><input type="file" id="tokuiIn" accept=".xlsx,.xls,.txt,.csv"></span>
       <span class="hint" id="tokuiMasterStat"></span>
     </div>
     <p class="hint">弥生からエクスポートした得意先台帳（<b>Excel/CSV どちらでも可</b>）をアップロードすると、スプレッドシートの「得意先台帳」シートに登録されます（コード・名称・フリガナ・TEL・FAX・担当者の列を見出しで自動判別）。件数が増えたら、同じ操作で入れ直せば最新に更新されます。登録後、②で得意先を名前検索して選べます。</p>
@@ -225,9 +225,9 @@
 
   <!-- 担当者台帳マスタ登録（管理者のみ） -->
   <div class="card admin-only" hidden>
-    <h2>担当者台帳マスタ（GAS）</h2>
+    <h2>担当者台帳マスタ（スプレッドシート）</h2>
     <div class="row">
-      <span class="filebtn"><button type="button">担当者台帳を取り込み（GASへ登録）</button><input type="file" id="tantoIn" accept=".xlsx,.xls,.txt,.csv"></span>
+      <span class="filebtn"><button type="button">担当者台帳を取り込み（スプレッドシートへ登録）</button><input type="file" id="tantoIn" accept=".xlsx,.xls,.txt,.csv"></span>
       <span class="hint" id="tantoMasterStat"></span>
     </div>
     <p class="hint">弥生の担当者台帳（<b>Excel/CSV</b>）をアップロードすると、スプレッドシートの「担当者台帳」シートに登録されます（1列目＝コード、2列目＝氏名。見出し行があれば自動判別）。②の担当者プルダウンに反映されます。</p>
@@ -293,7 +293,7 @@
       <button type="button" class="ghost sm" id="ruleAdd">＋ルール追加</button>
       <button type="button" id="applyAll">この条件で全明細を計算</button>
     </div>
-    <p class="hint">例：下限 10000・上限 空・マージン15・丸め10円・切捨て → 「原単価1万円以上は15%で10円切り捨て」。条件は保存するとGASに入り全端末で共有されます。</p>
+    <p class="hint">例：下限 10000・上限 空・マージン15・丸め10円・切捨て → 「原単価1万円以上は15%で10円切り捨て」。条件は保存するとスプレッドシートに入り全端末で共有されます。</p>
   </div>
 
   <!-- ③ 明細＋名寄せ -->
@@ -1189,13 +1189,13 @@ $('masterIn').addEventListener('change',async e=>{
   toast('マスタ解析中…');
   const rows=(await fileToRows(file)).map(r=>[(r[0]||'').trim(),(r[1]||'').trim(),(r[4]||'').trim()]).filter(r=>r[0]&&r[1]);
   if(!rows.length){ toastDone('台帳データを読めませんでした'); e.target.value=''; return; }
-  toast(`${rows.length}件をGASへ登録中…`,true);
+  toast(`${rows.length}件をスプレッドシートへ登録中…`,true);
   try{
     const res=await fetch(GAS_URL,{method:'POST',headers:{'Content-Type':'text/plain;charset=utf-8'},body:JSON.stringify({action:'setMaster',rows})});
     const j=await res.json();
-    if(!j.ok)throw new Error(j.error||'ng');
-    setMasterStat(`GAS登録済み：${j.count}件`); toastDone(`商品台帳 ${j.count}件を登録しました`); resolveAll();
-  }catch(err){ const m=(err&&err.message)||String(err); toastDone('GAS登録に失敗'); setMasterStat('GAS登録に失敗: '+m); console.error(err); }
+    if(!j.ok||typeof j.count!=='number')throw new Error('スプレッドシート側が未更新の可能性。Code.gsを「新しいバージョン」で再デプロイしてください');
+    setMasterStat(`スプレッドシート登録済み：${j.count}件`); toastDone(`商品台帳 ${j.count}件を登録しました`); resolveAll();
+  }catch(err){ const m=(err&&err.message)||String(err); toastDone('登録に失敗'); setMasterStat('登録に失敗: '+m); console.error(err); }
   e.target.value='';
 });
 
@@ -1233,13 +1233,13 @@ $('tokuiIn').addEventListener('change',async e=>{
   const rows=all.slice(start).map(r=>[g(r,cC),g(r,cN),g(r,cK),g(r,cT),g(r,cF),g(r,cTan)])
     .filter(r=>r[0]&&r[1]&&!r[0].startsWith('@'));
   if(!rows.length){ toastDone('得意先データを読めませんでした'); e.target.value=''; return; }
-  toast(`${rows.length}件をGASへ登録中…`,true);
+  toast(`${rows.length}件をスプレッドシートへ登録中…`,true);
   try{
     const res=await fetch(GAS_URL,{method:'POST',headers:{'Content-Type':'text/plain;charset=utf-8'},body:JSON.stringify({action:'setTokui',rows})});
-    const j=await res.json(); if(!j.ok)throw new Error(j.error||'ng');
+    const j=await res.json(); if(!j.ok||typeof j.count!=='number')throw new Error('スプレッドシート側が未更新の可能性。Code.gsを「新しいバージョン」で再デプロイしてください');
     try{ localStorage.removeItem('alltokui'); }catch(_){}
     await loadAllTokui();
-    const st=$('tokuiMasterStat'); if(st)st.textContent=`GAS登録済み：${j.count}件`;
+    const st=$('tokuiMasterStat'); if(st)st.textContent=`スプレッドシート登録済み：${j.count}件`;
     toastDone(`得意先台帳 ${j.count}件を登録しました`);
   }catch(err){ const m=(err&&err.message)||String(err); toastDone('得意先の登録に失敗'); const st=$('tokuiMasterStat'); if(st)st.textContent='登録に失敗: '+m; console.error(err); }
   e.target.value='';
@@ -1261,13 +1261,13 @@ $('tantoIn').addEventListener('change',async e=>{
   const rows=all.slice(start).map(r=>{ const code=g(r,cC), full=g(r,cN); return [code, tantoCleanName(full), full.replace(/　/g,' ').trim()]; })
     .filter(r=>r[0]&&r[1]);
   if(!rows.length){ toastDone('担当者データを読めませんでした'); e.target.value=''; return; }
-  toast(`${rows.length}件をGASへ登録中…`,true);
+  toast(`${rows.length}件をスプレッドシートへ登録中…`,true);
   try{
     const res=await fetch(GAS_URL,{method:'POST',headers:{'Content-Type':'text/plain;charset=utf-8'},body:JSON.stringify({action:'setTanto',rows})});
-    const j=await res.json(); if(!j.ok)throw new Error(j.error||'ng');
+    const j=await res.json(); if(!j.ok||typeof j.count!=='number')throw new Error('スプレッドシート側が未更新の可能性。Code.gsを「新しいバージョン」で再デプロイしてください');
     try{ localStorage.removeItem('alltanto'); }catch(_){}
     await loadAllTanto(); fillTantoSelect(); syncTantoFromProfile();
-    const st=$('tantoMasterStat'); if(st)st.textContent=`GAS登録済み：${j.count}件`;
+    const st=$('tantoMasterStat'); if(st)st.textContent=`スプレッドシート登録済み：${j.count}件`;
     toastDone(`担当者台帳 ${j.count}件を登録しました`);
   }catch(err){ const m=(err&&err.message)||String(err); toastDone('担当者の登録に失敗'); const st=$('tantoMasterStat'); if(st)st.textContent='登録に失敗: '+m; console.error(err); }
   e.target.value='';
