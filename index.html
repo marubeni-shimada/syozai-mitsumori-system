@@ -202,14 +202,24 @@
     </div>
   </div>
 
-  <!-- 商品台帳マスタ登録 -->
-  <div class="card">
+  <!-- 商品台帳マスタ登録（管理者のみ） -->
+  <div class="card admin-only" hidden>
     <h2>商品台帳マスタ（GAS）</h2>
     <div class="row">
       <span class="filebtn"><button type="button">マスタ取り込み（GASへ登録）</button><input type="file" id="masterIn" accept=".txt,.csv"></span>
       <span class="hint" id="masterStat">内蔵マスタ使用中（グレーチング705件）</span>
     </div>
     <p class="hint">弥生でエクスポートした商品台帳CSV（A列コード・B列商品名・E列単位）をアップロードすると、GASのスプレッドシート「商品台帳」に自動登録します。登録後は全件で名寄せします。</p>
+  </div>
+
+  <!-- 得意先台帳マスタ登録（管理者のみ） -->
+  <div class="card admin-only" hidden>
+    <h2>得意先台帳マスタ（GAS）</h2>
+    <div class="row">
+      <span class="filebtn"><button type="button">得意先台帳を取り込み（GASへ登録）</button><input type="file" id="tokuiIn" accept=".txt,.csv"></span>
+      <span class="hint" id="tokuiMasterStat"></span>
+    </div>
+    <p class="hint">得意先台帳のCSV（コード・名称・フリガナ・TEL・FAX・担当者の列を見出しで自動判別）をアップロードすると、GASの「得意先台帳」に登録します。登録後、②で得意先を名前検索して選べます。</p>
   </div>
 
   <div class="stepnav"><span></span><button type="button" data-go="2">次へ：金額と品チェック ▶</button></div>
@@ -219,13 +229,31 @@
   <!-- ② 設定 -->
   <div class="card">
     <h2>② 見積ヘッダ</h2>
+    <div class="row" style="margin-bottom:6px">
+      <div class="f" style="flex:1;min-width:240px"><label>得意先を検索（名称・フリガナ・コード）</label>
+        <input id="tokuiQuery" placeholder="例：常宏／ｼﾞｮｳｺｳ／1430" autocomplete="off"></div>
+      <span class="hint" id="tokuiStat"></span>
+    </div>
+    <div id="tokuiResults" style="margin:0 0 10px;max-height:220px;overflow:auto;border:1px solid var(--line);border-radius:8px;display:none"></div>
     <div class="row">
       <div class="f"><label>見積番号</label><input class="s" id="hNo" value="00090001"></div>
       <div class="f"><label>見積日(YYMMDD/令和)</label><input class="s" id="hDate" value="081020"></div>
-      <div class="f"><label>得意先コード</label><input class="s" id="hTokui" value="1430"></div>
-      <div class="f"><label>得意先名</label><input class="m" id="hTokuiName" value="㈱常宏"></div>
-      <div class="f"><label>担当者コード</label><input class="s" id="hTanto" value="111"></div>
+      <div class="f"><label>得意先コード</label><input class="s" id="hTokui" value=""></div>
+      <div class="f"><label>得意先名</label><input class="m" id="hTokuiName" value=""></div>
+      <div class="f"><label>担当者コード</label><select id="hTanto" style="min-width:150px"></select></div>
     </div>
+    <div class="row" style="margin-top:10px">
+      <div class="f"><label>得意先TEL</label><input class="s" id="hTel" value=""></div>
+      <div class="f"><label>得意先FAX</label><input class="s" id="hFax" value=""></div>
+      <div class="f"><label>仕入先名（見出し）</label><input class="m" id="hSupplier" value="" placeholder="PDFから自動"></div>
+    </div>
+    <div class="row" style="margin-top:10px">
+      <div class="f"><label>件名</label><input class="m" id="hKenmei" value=""></div>
+      <div class="f"><label>納入場所</label><input class="m" id="hNohin" value=""></div>
+      <div class="f"><label>支払条件</label><input class="s" id="hShiharai" value=""></div>
+      <div class="f"><label>有効期限/納期</label><input class="s" id="hYuko" value=""></div>
+    </div>
+    <p class="hint">件名・納入場所・支払条件・有効期限は、弥生伝票の専用行（種別20/22/23/24）として出力されます。空欄の項目は出力されません。</p>
   </div>
 
   <!-- 条件プリセット -->
@@ -233,7 +261,7 @@
     <h2>条件（担当者ごとに詳細設定できます）</h2>
     <div class="row">
       <div class="f"><label>担当者</label><select id="profSel" style="min-width:160px"></select></div>
-      <button type="button" class="sm" id="profSave">保存（共有）</button>
+      <button type="button" class="sm admin-only" id="profSave" hidden>保存（共有）</button>
       <span class="idhint">※担当者の追加・改名・削除は右上の「管理者」から</span>
     </div>
     <div class="row" style="margin-top:14px">
@@ -538,7 +566,7 @@ function renderRules(){
     `</tr>`).join('');
 }
 function bindProfileUI(){
-  $('profSel').addEventListener('change',e=>{ curIdx=+e.target.value; renderProfiles(); applyProfileToLines(); render(); });
+  $('profSel').addEventListener('change',e=>{ curIdx=+e.target.value; renderProfiles(); applyProfileToLines(); render(); syncTantoFromProfile(); });
   $('pMargin').addEventListener('input',e=>{ curProfile().defMargin=parseFloat(e.target.value)||0; applyProfileToLines(); recompute(); });
   $('pRoundUnit').addEventListener('change',e=>{ curProfile().defUnit=+e.target.value; applyProfileToLines(); recompute(); });
   $('pRoundMode').addEventListener('change',e=>{ curProfile().defMode=e.target.value; applyProfileToLines(); recompute(); });
@@ -587,7 +615,7 @@ function renderIdBar(){
 function bindIdBar(){
   $('idSave').addEventListener('click',()=>{ const i=+$('idSel').value; const n=PROFILES[i].name;
     setMyName(n); try{location.hash='me='+encodeURIComponent(n);}catch(_){}
-    curIdx=i; renderProfiles(); renderIdBar(); applyProfileToLines(); render(); toast(`担当者「${n}」で使います`); });
+    curIdx=i; renderProfiles(); renderIdBar(); applyProfileToLines(); render(); syncTantoFromProfile(); toast(`担当者「${n}」で使います`); });
   $('idSwitch').addEventListener('click',()=>{ $('idSet').hidden=true; $('idPick').hidden=false; $('idSel').value=curIdx; });
   $('idCopyLink').addEventListener('click',async()=>{ const n=PROFILES[curIdx].name; const url=myLink(n);
     try{ await navigator.clipboard.writeText(url); toast('自分用リンクをコピーしました。ブラウザにブックマークを'); }
@@ -662,7 +690,8 @@ const DRAFTS_KEY='mitsumori_drafts';
 let DRAFTS=[], curDraftId=null, curDraftName='', saveTimer=null;
 function loadDrafts(){ try{ DRAFTS=JSON.parse(localStorage.getItem(DRAFTS_KEY)||'[]')||[]; }catch(_){ DRAFTS=[]; } }
 function persistDrafts(){ try{ localStorage.setItem(DRAFTS_KEY,JSON.stringify(DRAFTS)); }catch(_){} }
-function headerVals(){ return {hNo:$('hNo').value,hDate:$('hDate').value,hTokui:$('hTokui').value,hTokuiName:$('hTokuiName').value,hTanto:$('hTanto').value}; }
+const HKEYS=['hNo','hDate','hTokui','hTokuiName','hTanto','hTel','hFax','hSupplier','hKenmei','hNohin','hShiharai','hYuko'];
+function headerVals(){ const o={}; HKEYS.forEach(k=>{ const e=$(k); if(e)o[k]=e.value; }); return o; }
 function newId(){ return 'd'+Date.now()+Math.random().toString(36).slice(2,5); }
 function saveDraft(){
   clearTimeout(saveTimer);
@@ -690,7 +719,7 @@ function renderDraftList(){
 function openDraft(id){
   const d=DRAFTS.find(x=>x.id===id); if(!d)return;
   curDraftId=d.id; curDraftName=d.name; curSupplier=d.supplier||''; LINES=d.lines;
-  ['hNo','hDate','hTokui','hTokuiName','hTanto'].forEach(k=>{ if($(k)&&d.header&&d.header[k]!=null)$(k).value=d.header[k]; });
+  HKEYS.forEach(k=>{ if($(k)&&d.header&&d.header[k]!=null)$(k).value=d.header[k]; });
   render(); showStep(2); toast(`「${d.name}」を再開`);
 }
 function removeDraft(id){ DRAFTS=DRAFTS.filter(d=>d.id!==id); persistDrafts(); renderDraftList(); }
@@ -775,6 +804,55 @@ $('msResults').addEventListener('click',e=>{
     toast(`${m.code} を設定しました`); closeMs(); }
 });
 
+// ===== 担当者マスタ（埋め込み） [code, 表示名, 詳細] =====
+const TANTO=[["001","川井 大輔 骨材","川井 大輔 骨材"],["101","川井 大輔","川井 大輔 090-7850-7615"],["102","池田 昭二","池田 昭二 080-8976-5207"],["103","飯田 大司郎","飯田 大司郎 080-8976-9041"],["104","益田 桂志","益田 桂志 080-2636-8093"],["105","松井 隆","松井 隆 080-2633-9559"],["106","社長","社長"],["107","千葉","千葉"],["108","山崎","山崎"],["109","その他","その他"],["110","社長2（サンフェル）","社長2（サンフェル）"],["111","鈴木 悠仁","鈴木 悠仁 080-8257-2717"],["112","青島 秀和","青島 秀和 090-5611-4135"],["113","渡邊 賢矢","渡邊 賢矢 080-8393-5593"],["N01","川井 大輔 生コン","川井 大輔 生コン"],["N02","池田 昭二 生コン","池田 昭二 生コン"],["N03","飯田 大司郎 生コン","飯田 大司郎 生コン"],["N04","益田 桂志 生コン","益田 桂志 生コン"],["N07","千葉 則秋 生コン","千葉 則秋 生コン"],["N11","鈴木 悠仁 生コン","鈴木 悠仁 生コン"],["N12","青島 秀和 生コン","青島 秀和 生コン"],["N13","渡邊 賢矢 生コン","渡邊 賢矢 生コン"]];
+function fillTantoSelect(){ const s=$('hTanto'); if(!s)return; const cur=s.value;
+  s.innerHTML='<option value="">（未選択）</option>'+TANTO.map(t=>`<option value="${t[0]}">${t[0]}｜${esc(t[1])}</option>`).join('');
+  if(cur)s.value=cur; }
+// ①で選んだ担当者名→②の担当者コードを自動反映（名前で照合。1xxコードを優先）
+function syncTantoFromProfile(){
+  const s=$('hTanto'); if(!s)return; const nm=(curProfile()&&curProfile().name||'').replace(/\s+/g,'');
+  if(!nm)return;
+  let hit=TANTO.find(t=>t[1].replace(/\s+/g,'')===nm && /^\d/.test(t[0]));   // 完全一致（数字コード優先）
+  if(!hit)hit=TANTO.find(t=>t[1].replace(/\s+/g,'')===nm);
+  if(!hit)hit=TANTO.find(t=>t[1].replace(/\s+/g,'').startsWith(nm)&&/^\d/.test(t[0]));
+  if(hit){ s.value=hit[0]; saveDraft(); }
+}
+
+// ===== 得意先マスタ（GASから全件取得→端末キャッシュ→検索） =====
+let ALLTOKUI=[];
+async function loadAllTokui(){
+  try{ const c=JSON.parse(localStorage.getItem('alltokui')||'null');
+    if(c&&c.items&&c.items.length&&c.t>Date.now()-864e5){ ALLTOKUI=c.items; return; } }catch(_){}
+  if(GAS_URL){ try{
+    const r=await fetch(GAS_URL,{method:'POST',headers:{'Content-Type':'text/plain;charset=utf-8'},body:JSON.stringify({action:'listTokui'})});
+    const j=await r.json(); if(j&&j.ok&&j.items){ ALLTOKUI=j.items;
+      try{ localStorage.setItem('alltokui',JSON.stringify({items:ALLTOKUI,t:Date.now()})); }catch(_){}
+    } }catch(_){}
+  }
+}
+function searchTokui(q,k=20){ q=(q||'').trim(); if(!q)return [];
+  const ts=q.split(/\s+/).filter(Boolean);
+  return ALLTOKUI.filter(t=>{ const hay=t.code+' '+t.name+' '+(t.kana||''); return ts.every(x=>hay.includes(x)); }).slice(0,k); }
+function renderTokuiResults(){
+  const box=$('tokuiResults'), q=$('tokuiQuery').value, list=searchTokui(q,20);
+  if(!q){ box.style.display='none'; return; }
+  box.style.display='block';
+  box.innerHTML = list.length
+    ? list.map(t=>`<div class="msrow" data-tc="${esc(t.code)}" style="padding:6px 8px;border-bottom:1px solid var(--line);cursor:pointer;display:flex;gap:8px;align-items:center"><span class="mono" style="color:var(--accent);min-width:46px;font-weight:700">${esc(t.code)}</span><span style="flex:1">${esc(t.name)}</span><span class="hint" style="white-space:nowrap">${esc(t.tanto||'')}</span></div>`).join('')
+    : '<p class="hint" style="padding:6px 8px;margin:0">該当なし</p>';
+}
+function pickTokui(code){
+  const t=ALLTOKUI.find(x=>x.code===code); if(!t)return;
+  $('hTokui').value=t.code; $('hTokuiName').value=t.name;
+  if($('hTel'))$('hTel').value=t.tel||''; if($('hFax'))$('hFax').value=t.fax||'';
+  if($('hTanto')&&t.tanto&&!$('hTanto').value) $('hTanto').value=t.tanto;   // 担当者が未選択なら得意先の既定担当者
+  $('tokuiQuery').value=''; $('tokuiResults').style.display='none'; saveDraft();
+  toast(`${t.code}｜${t.name} を設定しました`);
+}
+if($('tokuiQuery')){ $('tokuiQuery').addEventListener('input',renderTokuiResults);
+  $('tokuiResults').addEventListener('click',e=>{ const r=e.target.closest('[data-tc]'); if(r)pickTokui(r.dataset.tc); }); }
+
 // 常宏サンプル
 const SAMPLE=[
  ['sec','【洗車場-01】','',0,0],
@@ -831,6 +909,7 @@ $('pdfIn').addEventListener('change',async e=>{
     if(parsed.some(r=>r[0]==='item')){
       curDraftId=null; curDraftName=(file.name||'見積').replace(/\.pdf$/i,'');  // PDF名で新しい続きを作る
       curSupplier=fmt?fmt.name:'';   // 学習の紐付け先（判別できた仕入先）
+      if(fmt&&$('hSupplier')&&!$('hSupplier').value) $('hSupplier').value=fmt.name;  // 仕入先名を自動セット
       loadLines(parsed);
       const n=parsed.filter(r=>r[0]==='item').length;
       toastDone(generic?`明細 ${n} 件を自動抽出（要確認）`:`明細 ${n} 件を読込（${mode}）`); }
@@ -992,18 +1071,30 @@ function parseGeneric(words){
   return out;
 }
 
-// CSV生成（58列・弥生取引インポート形式）
+// CSV生成（58列・弥生取引インポート形式／いただいた弥生伝票の構造に準拠）
+// 構成：種別6(得意先ヘッダ＝見出しに仕入先名) → 本体(種別1明細/種別5摘要) → フッタ(20件名/22納入場所/23支払条件/24有効期限)
 function buildCsv(){
-  const H={no:$('hNo').value,date:$('hDate').value,tokui:$('hTokui').value,tname:$('hTokuiName').value,tanto:$('hTanto').value};
+  const g=k=>($(k)?$(k).value:'');
+  const H={no:g('hNo'),date:g('hDate'),tokui:g('hTokui'),tname:g('hTokuiName'),tanto:g('hTanto'),
+           tel:g('hTel'),fax:g('hFax'),supplier:g('hSupplier'),kenmei:g('hKenmei'),nohin:g('hNohin'),shiharai:g('hShiharai'),yuko:g('hYuko')};
   const rows=[]; let ln=0;
-  LINES.forEach(l=>{ ln++; const r=new Array(58).fill('');
+  const base=()=>{ const r=new Array(58).fill('');
     r[0]='1';r[1]='1';r[2]='0';r[3]=H.date;r[4]=H.no;r[5]='20';r[6]='1';r[7]='2';r[8]='1';r[9]='1';
-    r[10]=H.tokui;r[12]=H.tanto;r[13]=String(ln);r[36]=H.tname;r[49]='御見積合計金額';r[53]='様';r[54]='3';r[55]='3';r[56]='3';
+    r[10]=H.tokui;r[12]=H.tanto;r[36]=H.tname;r[49]='御見積合計金額';r[50]=H.tel;r[51]=H.fax;r[53]='様';r[54]='3';r[55]='3';r[56]='3';
+    return r; };
+  const zeros=r=>{ r[18]='0';r[20]='0';r[21]='0';['23','24','25','27','28','29'].forEach(c=>r[+c]='0');r[31]='0';r[32]='0'; };
+  const push=r=>{ ln++; r[13]=String(ln); rows.push(r.map(v=>`"${String(v).replace(/"/g,'""')}"`).join(',')); };
+  // 種別6：得意先ヘッダ（見出しに仕入先名）
+  { const r=base(); r[14]='6'; r[17]=H.supplier; zeros(r); push(r); }
+  // 本体
+  LINES.forEach(l=>{ const r=base();
     if(l.kind==='item'){ const sell=lineSell(l), amt=sell*l.qty, camt=l.cost*l.qty;
       r[14]='1';r[15]=l.code||'';r[17]=l.name;r[18]='13';r[19]=l.unit;r[20]='0';r[21]='0';r[22]='0000';
       r[23]=String(l.qty);r[24]=String(sell);r[25]=String(amt);r[27]=String(amt);r[28]=String(camt);r[29]=String(l.cost);r[31]='2';r[32]='2'; }
-    else{ r[14]='5';r[17]=l.name;r[18]='0';r[20]='0';r[21]='0';['23','24','25','27','28','29'].forEach(c=>r[+c]='0');r[31]='0';r[32]='0'; }  // 摘要・注記行は種別5（弥生実データ準拠）
-    rows.push(r.map(v=>`"${String(v).replace(/"/g,'""')}"`).join(',')); });
+    else{ r[14]='5';r[17]=l.name;zeros(r); }   // 摘要・注記行＝種別5
+    push(r); });
+  // フッタ（値がある項目だけ）：件名20／納入場所22／支払条件23／有効期限24
+  [['20',H.kenmei],['22',H.nohin],['23',H.shiharai],['24',H.yuko]].forEach(([t,v])=>{ if(v){ const r=base(); r[14]=t; r[17]=v; zeros(r); push(r); } });
   return rows.join('\r\n')+'\r\n';
 }
 $('copyCsv').addEventListener('click',async()=>{ const t=buildCsv(); try{await navigator.clipboard.writeText(t);toast('コピーしました');}catch(_){ $('csvOut').textContent=t;toast('コピー不可：表示に切替');}});
@@ -1088,6 +1179,40 @@ $('masterIn').addEventListener('change',async e=>{
     if(!j.ok)throw new Error(j.error||'ng');
     setMasterStat(`GAS登録済み：${j.count}件`); toastDone(`商品台帳 ${j.count}件を登録しました`); resolveAll();
   }catch(err){ const m=(err&&err.message)||String(err); toastDone('GAS登録に失敗'); setMasterStat('GAS登録に失敗: '+m); console.error(err); }
+  e.target.value='';
+});
+
+// 得意先台帳の取り込み（見出し名で列を自動判別 → GASへ登録）
+function pickCol(header,names){ for(let i=0;i<header.length;i++){ const h=(header[i]||'').replace(/\s/g,''); if(names.some(n=>h.indexOf(n)>=0))return i; } return -1; }
+$('tokuiIn').addEventListener('change',async e=>{
+  const file=e.target.files[0]; if(!file)return;
+  if(!GAS_URL){ toast('GAS_URLが未設定です'); e.target.value=''; return; }
+  toast('得意先台帳を解析中…');
+  const buf=await file.arrayBuffer(); let text;
+  try{ text=new TextDecoder('utf-8',{fatal:true}).decode(buf); }
+  catch(_){ try{ text=new TextDecoder('shift_jis').decode(buf); }catch(__){ text=new TextDecoder().decode(buf); } }
+  const all=parseCSV(text).filter(r=>r.some(c=>(c||'').trim()));
+  if(!all.length){ toastDone('得意先データを読めませんでした'); e.target.value=''; return; }
+  // 見出し行を探す（コードと名称を含む行）
+  let hi=all.findIndex(r=>r.some(c=>/コード/.test(c))&&r.some(c=>/名称|得意先名|名前/.test(c)));
+  let cC,cN,cK,cT,cF,cTan,start;
+  if(hi>=0){ const H=all[hi];
+    cC=pickCol(H,['コード']); cN=pickCol(H,['名称','得意先名','名前']); cK=pickCol(H,['フリガナ','カナ']);
+    cT=pickCol(H,['TEL','電話']); cF=pickCol(H,['FAX']); cTan=pickCol(H,['担当者']); start=hi+1;
+  }else{ cC=0;cN=1;cK=2;cT=3;cF=4;cTan=5;start=0; }   // 見出し無し＝固定順
+  const g=(r,i)=>i>=0&&i<r.length?(r[i]||'').trim():'';
+  const rows=all.slice(start).map(r=>[g(r,cC),g(r,cN),g(r,cK),g(r,cT),g(r,cF),g(r,cTan)])
+    .filter(r=>r[0]&&r[1]&&!r[0].startsWith('@'));
+  if(!rows.length){ toastDone('得意先データを読めませんでした'); e.target.value=''; return; }
+  toast(`${rows.length}件をGASへ登録中…`,true);
+  try{
+    const res=await fetch(GAS_URL,{method:'POST',headers:{'Content-Type':'text/plain;charset=utf-8'},body:JSON.stringify({action:'setTokui',rows})});
+    const j=await res.json(); if(!j.ok)throw new Error(j.error||'ng');
+    try{ localStorage.removeItem('alltokui'); }catch(_){}
+    await loadAllTokui();
+    const st=$('tokuiMasterStat'); if(st)st.textContent=`GAS登録済み：${j.count}件`;
+    toastDone(`得意先台帳 ${j.count}件を登録しました`);
+  }catch(err){ const m=(err&&err.message)||String(err); toastDone('得意先の登録に失敗'); const st=$('tokuiMasterStat'); if(st)st.textContent='登録に失敗: '+m; console.error(err); }
   e.target.value='';
 });
 
@@ -1239,8 +1364,10 @@ bindAdmin();
 bindFormatTab();
 renderIdBar();
 bindIdBar();
+fillTantoSelect();            // 担当者コードのプルダウン
+syncTantoFromProfile();       // この端末の担当者に合わせて担当者コードを初期反映
 // 作業中データ（続きから）
-['hNo','hDate','hTokui','hTokuiName','hTanto'].forEach(k=>{ const e=$(k); if(e)e.addEventListener('input',saveDraft); });
+HKEYS.forEach(k=>{ const e=$(k); if(e)e.addEventListener('input',saveDraft); });
 loadDrafts(); bindDrafts(); renderDraftList();
 LINES=[]; render();   // 起動時は空。続き一覧から選ぶかPDFを読み込む
 showStep(1);
@@ -1248,4 +1375,5 @@ loadProfilesGAS();   // GASに共有プリセットがあれば上書き
 loadFormatsGAS();    // 登録済みの仕入先書式を読み込む
 loadLearnedGAS();    // 名寄せ学習データを読み込む
 loadAllMaster().then(()=>{ const e=$('masterLoadStat'); if(e)e.textContent=ALLMASTER.length?`商品マスタ ${ALLMASTER.length}件 検索可`:''; }); // 検索用マスタ
+loadAllTokui().then(()=>{ const e=$('tokuiStat'); if(e)e.textContent=ALLTOKUI.length?`得意先 ${ALLTOKUI.length}件 検索可`:'（得意先台帳が未登録。管理→得意先台帳マスタで取り込み）'; const st=$('tokuiMasterStat'); if(st&&ALLTOKUI.length)st.textContent=`登録済み：${ALLTOKUI.length}件`; }); // 得意先マスタ
 </script>
