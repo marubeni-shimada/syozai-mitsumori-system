@@ -524,11 +524,15 @@ let curIdx=0;
 const curProfile=()=>PROFILES[curIdx]||PROFILES[0];
 function loadProfilesLocal(){ try{ const s=localStorage.getItem('mitsumori_profiles'); if(s){const o=JSON.parse(s); if(o&&o.length)PROFILES=o;} }catch(_){} }
 function saveProfilesLocal(){ try{ localStorage.setItem('mitsumori_profiles',JSON.stringify(PROFILES)); }catch(_){} }
+// 担当者ごとの②条件（マージン・丸め・ルール）をこの端末に記憶（GASは触らない）
+function saveProfOverrides(){ try{ const m={}; PROFILES.forEach(p=>{ m[p.name]={defMargin:p.defMargin,defUnit:p.defUnit,defMode:p.defMode,rules:p.rules||[]}; }); localStorage.setItem('mitsumori_prof_ovr',JSON.stringify(m)); }catch(_){} }
+function applyProfOverrides(){ try{ const m=JSON.parse(localStorage.getItem('mitsumori_prof_ovr')||'null'); if(!m)return;
+  PROFILES.forEach(p=>{ const o=m[p.name]; if(o){ p.defMargin=o.defMargin; p.defUnit=o.defUnit; p.defMode=o.defMode; p.rules=o.rules||[]; } }); }catch(_){} }
 
 async function loadProfilesGAS(){
   if(!GAS_URL)return;
   try{ const r=await fetch(GAS_URL,{method:'POST',headers:{'Content-Type':'text/plain;charset=utf-8'},body:JSON.stringify({action:'getProfiles'})});
-    const j=await r.json(); if(j&&j.ok&&j.profiles&&j.profiles.length){ PROFILES=j.profiles; curIdx=0; selectProfileByName(getMyName()); renderProfiles(); renderIdBar(); applyProfileToLines(); render(); } }catch(_){}
+    const j=await r.json(); if(j&&j.ok&&j.profiles&&j.profiles.length){ PROFILES=j.profiles; applyProfOverrides(); curIdx=0; selectProfileByName(getMyName()); renderProfiles(); renderIdBar(); applyProfileToLines(); render(); } }catch(_){}
 }
 async function saveProfilesGAS(){
   saveProfilesLocal();
@@ -578,16 +582,16 @@ function renderRules(){
 }
 function bindProfileUI(){
   $('profSel').addEventListener('change',e=>{ curIdx=+e.target.value; renderProfiles(); applyProfileToLines(); render(); syncTantoFromProfile(); });
-  $('pMargin').addEventListener('input',e=>{ curProfile().defMargin=parseFloat(e.target.value)||0; applyProfileToLines(); recompute(); });
-  $('pRoundUnit').addEventListener('change',e=>{ curProfile().defUnit=+e.target.value; applyProfileToLines(); recompute(); });
-  $('pRoundMode').addEventListener('change',e=>{ curProfile().defMode=e.target.value; applyProfileToLines(); recompute(); });
-  $('ruleAdd').addEventListener('click',()=>{ curProfile().rules.push({min:'',max:'',margin:curProfile().defMargin,unit:curProfile().defUnit,mode:curProfile().defMode}); renderRules(); });
-  $('ruleRows').addEventListener('input',e=>{ if(e.target.classList.contains('rl')){ const r=curProfile().rules[+e.target.dataset.ri]; r[e.target.dataset.rk]=e.target.value; } });
-  $('ruleRows').addEventListener('change',e=>{ if(e.target.tagName==='SELECT'&&e.target.classList.contains('rl')){ const r=curProfile().rules[+e.target.dataset.ri]; r[e.target.dataset.rk]=e.target.value; } });
-  $('ruleRows').addEventListener('click',e=>{ if(e.target.dataset.rdel!==undefined){ curProfile().rules.splice(+e.target.dataset.rdel,1); renderRules(); } });
-  $('profNew').addEventListener('click',()=>{ const n=prompt('担当者名'); if(!n)return; PROFILES.push({name:n,defMargin:20,defUnit:10,defMode:'round',rules:[]}); curIdx=PROFILES.length-1; renderProfiles(); renderIdBar(); toast(`担当者「${n}」を追加（保存で共有）`); });
-  $('profRename').addEventListener('click',()=>{ const n=prompt('名前を変更',curProfile().name); if(!n)return; curProfile().name=n; renderProfiles(); renderIdBar(); });
-  $('profDel').addEventListener('click',()=>{ if(PROFILES.length<=1){toast('最後の1件は削除できません');return;} if(!confirm('この担当者を削除しますか？'))return; PROFILES.splice(curIdx,1); curIdx=0; renderProfiles(); renderIdBar(); applyProfileToLines(); render(); });
+  $('pMargin').addEventListener('input',e=>{ curProfile().defMargin=parseFloat(e.target.value)||0; applyProfileToLines(); recompute(); saveProfOverrides(); });
+  $('pRoundUnit').addEventListener('change',e=>{ curProfile().defUnit=+e.target.value; applyProfileToLines(); recompute(); saveProfOverrides(); });
+  $('pRoundMode').addEventListener('change',e=>{ curProfile().defMode=e.target.value; applyProfileToLines(); recompute(); saveProfOverrides(); });
+  $('ruleAdd').addEventListener('click',()=>{ curProfile().rules.push({min:'',max:'',margin:curProfile().defMargin,unit:curProfile().defUnit,mode:curProfile().defMode}); renderRules(); saveProfOverrides(); });
+  $('ruleRows').addEventListener('input',e=>{ if(e.target.classList.contains('rl')){ const r=curProfile().rules[+e.target.dataset.ri]; r[e.target.dataset.rk]=e.target.value; saveProfOverrides(); } });
+  $('ruleRows').addEventListener('change',e=>{ if(e.target.tagName==='SELECT'&&e.target.classList.contains('rl')){ const r=curProfile().rules[+e.target.dataset.ri]; r[e.target.dataset.rk]=e.target.value; saveProfOverrides(); } });
+  $('ruleRows').addEventListener('click',e=>{ if(e.target.dataset.rdel!==undefined){ curProfile().rules.splice(+e.target.dataset.rdel,1); renderRules(); saveProfOverrides(); } });
+  $('profNew').addEventListener('click',async()=>{ const n=prompt('担当者名'); if(!n)return; PROFILES.push({name:n,defMargin:20,defUnit:10,defMode:'round',rules:[]}); curIdx=PROFILES.length-1; renderProfiles(); renderIdBar(); await saveProfilesGAS(); toast(`担当者「${n}」を追加・保存しました`); });
+  $('profRename').addEventListener('click',async()=>{ const n=prompt('名前を変更',curProfile().name); if(!n)return; curProfile().name=n; renderProfiles(); renderIdBar(); await saveProfilesGAS(); });
+  $('profDel').addEventListener('click',async()=>{ if(PROFILES.length<=1){toast('最後の1件は削除できません');return;} if(!confirm('この担当者を削除しますか？'))return; PROFILES.splice(curIdx,1); curIdx=0; renderProfiles(); renderIdBar(); applyProfileToLines(); render(); await saveProfilesGAS(); });
   $('profSave').addEventListener('click',saveProfilesGAS);
 }
 
@@ -817,14 +821,11 @@ $('msResults').addEventListener('click',e=>{
 
 // ===== 担当者マスタ（スプレッドシート「担当者台帳」管理。未登録時は下記を既定として使用） =====
 let TANTO=[["001","川井 大輔 骨材","川井 大輔 骨材"],["101","川井 大輔","川井 大輔 090-7850-7615"],["102","池田 昭二","池田 昭二 080-8976-5207"],["103","飯田 大司郎","飯田 大司郎 080-8976-9041"],["104","益田 桂志","益田 桂志 080-2636-8093"],["105","松井 隆","松井 隆 080-2633-9559"],["106","社長","社長"],["107","千葉","千葉"],["108","山崎","山崎"],["109","その他","その他"],["110","社長2（サンフェル）","社長2（サンフェル）"],["111","鈴木 悠仁","鈴木 悠仁 080-8257-2717"],["112","青島 秀和","青島 秀和 090-5611-4135"],["113","渡邊 賢矢","渡邊 賢矢 080-8393-5593"],["N01","川井 大輔 生コン","川井 大輔 生コン"],["N02","池田 昭二 生コン","池田 昭二 生コン"],["N03","飯田 大司郎 生コン","飯田 大司郎 生コン"],["N04","益田 桂志 生コン","益田 桂志 生コン"],["N07","千葉 則秋 生コン","千葉 則秋 生コン"],["N11","鈴木 悠仁 生コン","鈴木 悠仁 生コン"],["N12","青島 秀和 生コン","青島 秀和 生コン"],["N13","渡邊 賢矢 生コン","渡邊 賢矢 生コン"]];
-async function loadAllTanto(){   // GASの担当者台帳があれば上書き
-  try{ const c=JSON.parse(localStorage.getItem('alltanto')||'null');
-    if(c&&c.items&&c.items.length&&c.t>Date.now()-864e5){ TANTO=c.items; return; } }catch(_){}
+async function loadAllTanto(){   // 担当者台帳は少量なので毎回最新を取得（シート編集が即反映）
   if(GAS_URL){ try{
     const r=await fetch(GAS_URL,{method:'POST',headers:{'Content-Type':'text/plain;charset=utf-8'},body:JSON.stringify({action:'listTanto'})});
-    const j=await r.json(); if(j&&j.ok&&j.items&&j.items.length){ TANTO=j.items.map(t=>[t.code,t.name,t.full||t.name]);
-      try{ localStorage.setItem('alltanto',JSON.stringify({items:TANTO,t:Date.now()})); }catch(_){}
-    } }catch(_){}
+    const j=await r.json(); if(j&&j.ok&&j.items&&j.items.length){ TANTO=j.items.map(t=>[t.code,t.name,t.full||t.name]); }
+    } catch(_){}
   }
 }
 function tantoCleanName(s){ return String(s||'').replace(/　/g,' ').replace(/\s*0\d[\d-]{6,}.*/,'').replace(/\s+/g,' ').trim(); }
@@ -1416,6 +1417,7 @@ function bindFormatTab(){
 
 // 初期化
 loadProfilesLocal();
+applyProfOverrides();   // 担当者ごとの②条件（この端末の記憶）を反映
 if(hashName())setMyName(hashName());       // URLで来たら端末にも記憶
 selectProfileByName(getMyName());  // この端末の担当者を優先
 renderProfiles();
