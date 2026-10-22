@@ -284,21 +284,23 @@
       <div class="f"><label>既定の丸め</label><select id="pRoundUnit"><option value="1">1円</option><option value="10" selected>10円</option><option value="100">100円</option></select></div>
       <div class="f"><label>丸め方法</label><select id="pRoundMode"><option value="round" selected>四捨五入</option><option value="ceil">切上げ</option><option value="floor">切捨て</option></select></div>
     </div>
-    <p class="hint" style="margin-top:14px"><b>単価帯ごとの詳細ルール</b>（任意・上から順に判定。該当しなければ既定を適用）</p>
-    <div class="tablewrap" style="margin-top:6px">
-      <table style="min-width:620px">
-        <thead><tr>
-          <th style="width:42px">適用</th><th>原単価 下限</th><th>上限(空=なし)</th><th>マージン%</th><th>丸め単位</th><th>丸め方法</th><th></th>
-        </tr></thead>
-        <tbody id="ruleRows"></tbody>
-      </table>
+    <button type="button" id="ruleToggle" style="margin-top:14px;background:none;border:none;color:var(--accent);font-weight:700;cursor:pointer;padding:4px 0;font-size:.9rem">▸ 単価帯ルール（任意・特定の価格帯だけ別マージンにしたいとき）<span class="hint" id="ruleCount" style="font-weight:400"></span></button>
+    <div id="ruleSection" hidden>
+      <p class="hint" style="margin-top:6px">上から順に判定し、該当しなければ既定を適用します。左のチェックを入れたルールだけが有効です。</p>
+      <div class="tablewrap" style="margin-top:6px">
+        <table style="min-width:620px">
+          <thead><tr>
+            <th style="width:42px">適用</th><th>原単価 下限</th><th>上限(空=なし)</th><th>マージン%</th><th>丸め単位</th><th>丸め方法</th><th></th>
+          </tr></thead>
+          <tbody id="ruleRows"></tbody>
+        </table>
+      </div>
+      <div class="row" style="margin-top:10px">
+        <button type="button" class="ghost sm" id="ruleAdd">＋ルール追加</button>
+        <button type="button" id="applyRules">チェックしたルールを適用</button>
+      </div>
+      <p class="hint">例：下限 10000・上限 空・マージン15・丸め10円・切捨て → 「原単価1万円以上は15%で10円切り捨て」。条件は保存するとスプレッドシートに入り全端末で共有されます。</p>
     </div>
-    <div class="row" style="margin-top:10px">
-      <button type="button" class="ghost sm" id="ruleAdd">＋ルール追加</button>
-      <button type="button" id="applyRules">チェックしたルールを適用</button>
-      <span class="hint">左のチェックを入れたルールだけが有効になります</span>
-    </div>
-    <p class="hint">例：下限 10000・上限 空・マージン15・丸め10円・切捨て → 「原単価1万円以上は15%で10円切り捨て」。条件は保存するとスプレッドシートに入り全端末で共有されます。</p>
   </div>
 
   <!-- ③ 明細＋名寄せ -->
@@ -586,6 +588,8 @@ function renderRules(){
     `<td><select class="rl" data-ri="${i}" data-rk="mode"><option value="round" ${r.mode==='round'?'selected':''}>四捨五入</option><option value="ceil" ${r.mode==='ceil'?'selected':''}>切上げ</option><option value="floor" ${r.mode==='floor'?'selected':''}>切捨て</option></select></td>`+
     `<td><button class="delrow" data-rdel="${i}">×</button></td>`+
     `</tr>`).join('');
+  const rc=$('ruleCount'); if(rc){ const n=(p.rules||[]).length, on=(p.rules||[]).filter(r=>r.enabled!==false).length;
+    rc.textContent = n? `　— ${on}/${n} 件有効` : ''; }
 }
 function bindProfileUI(){
   $('profSel').addEventListener('change',e=>{ curIdx=+e.target.value; renderProfiles(); applyProfileToLines(); render(); syncTantoFromProfile(); });
@@ -599,6 +603,8 @@ function bindProfileUI(){
     if(e.target.tagName==='SELECT'&&e.target.classList.contains('rl')){ const r=curProfile().rules[+e.target.dataset.ri]; r[e.target.dataset.rk]=e.target.value; saveProfOverrides(); } });
   $('ruleRows').addEventListener('click',e=>{ if(e.target.dataset.rdel!==undefined){ curProfile().rules.splice(+e.target.dataset.rdel,1); renderRules(); saveProfOverrides(); } });
   $('applyRules').addEventListener('click',()=>{ applyProfileToLines(); render(); const on=(curProfile().rules||[]).filter(r=>r.enabled!==false).length; toast(`チェックしたルール${on}件を全明細に適用しました`); });
+  $('ruleToggle').addEventListener('click',()=>{ const sec=$('ruleSection'), open=sec.hidden; sec.hidden=!open;
+    $('ruleToggle').firstChild.nodeValue=(open?'▾':'▸')+' 単価帯ルール（任意・特定の価格帯だけ別マージンにしたいとき）'; });
   $('profNew').addEventListener('click',async()=>{ const n=prompt('担当者名'); if(!n)return; PROFILES.push({name:n,defMargin:20,defUnit:10,defMode:'round',rules:[]}); curIdx=PROFILES.length-1; renderProfiles(); renderIdBar(); await saveProfilesGAS(); toast(`担当者「${n}」を追加・保存しました`); });
   $('profRename').addEventListener('click',async()=>{ const n=prompt('名前を変更',curProfile().name); if(!n)return; curProfile().name=n; renderProfiles(); renderIdBar(); await saveProfilesGAS(); });
   $('profDel').addEventListener('click',async()=>{ if(PROFILES.length<=1){toast('最後の1件は削除できません');return;} if(!confirm('この担当者を削除しますか？'))return; PROFILES.splice(curIdx,1); curIdx=0; renderProfiles(); renderIdBar(); applyProfileToLines(); render(); await saveProfilesGAS(); });
