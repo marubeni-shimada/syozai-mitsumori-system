@@ -2,6 +2,7 @@
 <meta name="claude:viewport-fit-sides" content="cover">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/encoding-japanese/2.0.0/encoding.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 <style>
   /* レイアウト: 縦1カラム。①入力(PDF/サンプル) ②ヘッダ・マージン設定 ③明細+名寄せ表 ④合計 ⑤CSV出力 */
   :root{
@@ -206,7 +207,7 @@
   <div class="card admin-only" hidden>
     <h2>商品台帳マスタ（GAS）</h2>
     <div class="row">
-      <span class="filebtn"><button type="button">マスタ取り込み（GASへ登録）</button><input type="file" id="masterIn" accept=".txt,.csv"></span>
+      <span class="filebtn"><button type="button">マスタ取り込み（GASへ登録）</button><input type="file" id="masterIn" accept=".xlsx,.xls,.txt,.csv"></span>
       <span class="hint" id="masterStat">内蔵マスタ使用中（グレーチング705件）</span>
     </div>
     <p class="hint">弥生でエクスポートした商品台帳CSV（A列コード・B列商品名・E列単位）をアップロードすると、GASのスプレッドシート「商品台帳」に自動登録します。登録後は全件で名寄せします。</p>
@@ -216,10 +217,20 @@
   <div class="card admin-only" hidden>
     <h2>得意先台帳マスタ（GAS）</h2>
     <div class="row">
-      <span class="filebtn"><button type="button">得意先台帳を取り込み（GASへ登録）</button><input type="file" id="tokuiIn" accept=".txt,.csv"></span>
+      <span class="filebtn"><button type="button">得意先台帳を取り込み（GASへ登録）</button><input type="file" id="tokuiIn" accept=".xlsx,.xls,.txt,.csv"></span>
       <span class="hint" id="tokuiMasterStat"></span>
     </div>
-    <p class="hint">得意先台帳のCSV（コード・名称・フリガナ・TEL・FAX・担当者の列を見出しで自動判別）をアップロードすると、GASの「得意先台帳」に登録します。登録後、②で得意先を名前検索して選べます。</p>
+    <p class="hint">弥生からエクスポートした得意先台帳（<b>Excel/CSV どちらでも可</b>）をアップロードすると、スプレッドシートの「得意先台帳」シートに登録されます（コード・名称・フリガナ・TEL・FAX・担当者の列を見出しで自動判別）。件数が増えたら、同じ操作で入れ直せば最新に更新されます。登録後、②で得意先を名前検索して選べます。</p>
+  </div>
+
+  <!-- 担当者台帳マスタ登録（管理者のみ） -->
+  <div class="card admin-only" hidden>
+    <h2>担当者台帳マスタ（GAS）</h2>
+    <div class="row">
+      <span class="filebtn"><button type="button">担当者台帳を取り込み（GASへ登録）</button><input type="file" id="tantoIn" accept=".xlsx,.xls,.txt,.csv"></span>
+      <span class="hint" id="tantoMasterStat"></span>
+    </div>
+    <p class="hint">弥生の担当者台帳（<b>Excel/CSV</b>）をアップロードすると、スプレッドシートの「担当者台帳」シートに登録されます（1列目＝コード、2列目＝氏名。見出し行があれば自動判別）。②の担当者プルダウンに反映されます。</p>
   </div>
 
   <div class="stepnav"><span></span><button type="button" data-go="2">次へ：金額と品チェック ▶</button></div>
@@ -804,8 +815,19 @@ $('msResults').addEventListener('click',e=>{
     toast(`${m.code} を設定しました`); closeMs(); }
 });
 
-// ===== 担当者マスタ（埋め込み） [code, 表示名, 詳細] =====
-const TANTO=[["001","川井 大輔 骨材","川井 大輔 骨材"],["101","川井 大輔","川井 大輔 090-7850-7615"],["102","池田 昭二","池田 昭二 080-8976-5207"],["103","飯田 大司郎","飯田 大司郎 080-8976-9041"],["104","益田 桂志","益田 桂志 080-2636-8093"],["105","松井 隆","松井 隆 080-2633-9559"],["106","社長","社長"],["107","千葉","千葉"],["108","山崎","山崎"],["109","その他","その他"],["110","社長2（サンフェル）","社長2（サンフェル）"],["111","鈴木 悠仁","鈴木 悠仁 080-8257-2717"],["112","青島 秀和","青島 秀和 090-5611-4135"],["113","渡邊 賢矢","渡邊 賢矢 080-8393-5593"],["N01","川井 大輔 生コン","川井 大輔 生コン"],["N02","池田 昭二 生コン","池田 昭二 生コン"],["N03","飯田 大司郎 生コン","飯田 大司郎 生コン"],["N04","益田 桂志 生コン","益田 桂志 生コン"],["N07","千葉 則秋 生コン","千葉 則秋 生コン"],["N11","鈴木 悠仁 生コン","鈴木 悠仁 生コン"],["N12","青島 秀和 生コン","青島 秀和 生コン"],["N13","渡邊 賢矢 生コン","渡邊 賢矢 生コン"]];
+// ===== 担当者マスタ（スプレッドシート「担当者台帳」管理。未登録時は下記を既定として使用） =====
+let TANTO=[["001","川井 大輔 骨材","川井 大輔 骨材"],["101","川井 大輔","川井 大輔 090-7850-7615"],["102","池田 昭二","池田 昭二 080-8976-5207"],["103","飯田 大司郎","飯田 大司郎 080-8976-9041"],["104","益田 桂志","益田 桂志 080-2636-8093"],["105","松井 隆","松井 隆 080-2633-9559"],["106","社長","社長"],["107","千葉","千葉"],["108","山崎","山崎"],["109","その他","その他"],["110","社長2（サンフェル）","社長2（サンフェル）"],["111","鈴木 悠仁","鈴木 悠仁 080-8257-2717"],["112","青島 秀和","青島 秀和 090-5611-4135"],["113","渡邊 賢矢","渡邊 賢矢 080-8393-5593"],["N01","川井 大輔 生コン","川井 大輔 生コン"],["N02","池田 昭二 生コン","池田 昭二 生コン"],["N03","飯田 大司郎 生コン","飯田 大司郎 生コン"],["N04","益田 桂志 生コン","益田 桂志 生コン"],["N07","千葉 則秋 生コン","千葉 則秋 生コン"],["N11","鈴木 悠仁 生コン","鈴木 悠仁 生コン"],["N12","青島 秀和 生コン","青島 秀和 生コン"],["N13","渡邊 賢矢 生コン","渡邊 賢矢 生コン"]];
+async function loadAllTanto(){   // GASの担当者台帳があれば上書き
+  try{ const c=JSON.parse(localStorage.getItem('alltanto')||'null');
+    if(c&&c.items&&c.items.length&&c.t>Date.now()-864e5){ TANTO=c.items; return; } }catch(_){}
+  if(GAS_URL){ try{
+    const r=await fetch(GAS_URL,{method:'POST',headers:{'Content-Type':'text/plain;charset=utf-8'},body:JSON.stringify({action:'listTanto'})});
+    const j=await r.json(); if(j&&j.ok&&j.items&&j.items.length){ TANTO=j.items.map(t=>[t.code,t.name,t.full||t.name]);
+      try{ localStorage.setItem('alltanto',JSON.stringify({items:TANTO,t:Date.now()})); }catch(_){}
+    } }catch(_){}
+  }
+}
+function tantoCleanName(s){ return String(s||'').replace(/　/g,' ').replace(/\s*0\d[\d-]{6,}.*/,'').replace(/\s+/g,' ').trim(); }
 function fillTantoSelect(){ const s=$('hTanto'); if(!s)return; const cur=s.value;
   s.innerHTML='<option value="">（未選択）</option>'+TANTO.map(t=>`<option value="${t[0]}">${t[0]}｜${esc(t[1])}</option>`).join('');
   if(cur)s.value=cur; }
@@ -1165,12 +1187,7 @@ $('masterIn').addEventListener('change',async e=>{
   const file=e.target.files[0]; if(!file)return;
   if(!GAS_URL){ toast('GAS_URLが未設定です'); e.target.value=''; return; }
   toast('マスタ解析中…');
-  const buf=await file.arrayBuffer();
-  let text;
-  try{ text=new TextDecoder('utf-8',{fatal:true}).decode(buf); }       // UTF-8なら採用
-  catch(_){ try{ text=new TextDecoder('shift_jis').decode(buf); }       // 弥生標準=Shift-JIS
-            catch(__){ text=new TextDecoder().decode(buf); } }
-  const rows=parseCSV(text).map(r=>[(r[0]||'').trim(),(r[1]||'').trim(),(r[4]||'').trim()]).filter(r=>r[0]&&r[1]);
+  const rows=(await fileToRows(file)).map(r=>[(r[0]||'').trim(),(r[1]||'').trim(),(r[4]||'').trim()]).filter(r=>r[0]&&r[1]);
   if(!rows.length){ toastDone('台帳データを読めませんでした'); e.target.value=''; return; }
   toast(`${rows.length}件をGASへ登録中…`,true);
   try{
@@ -1182,16 +1199,28 @@ $('masterIn').addEventListener('change',async e=>{
   e.target.value='';
 });
 
-// 得意先台帳の取り込み（見出し名で列を自動判別 → GASへ登録）
+// ファイル→行配列（.xlsx/.xls は表計算として、.csv/.txt はテキストとして解析）
 function pickCol(header,names){ for(let i=0;i<header.length;i++){ const h=(header[i]||'').replace(/\s/g,''); if(names.some(n=>h.indexOf(n)>=0))return i; } return -1; }
+async function fileToRows(file){
+  const buf=await file.arrayBuffer();
+  if(/\.xlsx?$/i.test(file.name) && window.XLSX){
+    const wb=XLSX.read(buf,{type:'array'});
+    const ws=wb.Sheets[wb.SheetNames[0]];
+    // 表示どおりの文字列で取得（コードの先頭0を保持）
+    const arr=XLSX.utils.sheet_to_json(ws,{header:1,raw:false,defval:''});
+    return arr.map(r=>r.map(c=>c==null?'':String(c)));
+  }
+  let text;
+  try{ text=new TextDecoder('utf-8',{fatal:true}).decode(buf); }
+  catch(_){ try{ text=new TextDecoder('shift_jis').decode(buf); }catch(__){ text=new TextDecoder().decode(buf); } }
+  return parseCSV(text);
+}
+// 得意先台帳の取り込み（Excel/CSV対応・見出し名で列を自動判別 → GASへ登録）
 $('tokuiIn').addEventListener('change',async e=>{
   const file=e.target.files[0]; if(!file)return;
   if(!GAS_URL){ toast('GAS_URLが未設定です'); e.target.value=''; return; }
   toast('得意先台帳を解析中…');
-  const buf=await file.arrayBuffer(); let text;
-  try{ text=new TextDecoder('utf-8',{fatal:true}).decode(buf); }
-  catch(_){ try{ text=new TextDecoder('shift_jis').decode(buf); }catch(__){ text=new TextDecoder().decode(buf); } }
-  const all=parseCSV(text).filter(r=>r.some(c=>(c||'').trim()));
+  const all=(await fileToRows(file)).filter(r=>r.some(c=>(c||'').trim()));
   if(!all.length){ toastDone('得意先データを読めませんでした'); e.target.value=''; return; }
   // 見出し行を探す（コードと名称を含む行）
   let hi=all.findIndex(r=>r.some(c=>/コード/.test(c))&&r.some(c=>/名称|得意先名|名前/.test(c)));
@@ -1213,6 +1242,34 @@ $('tokuiIn').addEventListener('change',async e=>{
     const st=$('tokuiMasterStat'); if(st)st.textContent=`GAS登録済み：${j.count}件`;
     toastDone(`得意先台帳 ${j.count}件を登録しました`);
   }catch(err){ const m=(err&&err.message)||String(err); toastDone('得意先の登録に失敗'); const st=$('tokuiMasterStat'); if(st)st.textContent='登録に失敗: '+m; console.error(err); }
+  e.target.value='';
+});
+
+// 担当者台帳の取り込み（Excel/CSV対応 → GASへ登録）
+$('tantoIn').addEventListener('change',async e=>{
+  const file=e.target.files[0]; if(!file)return;
+  if(!GAS_URL){ toast('GAS_URLが未設定です'); e.target.value=''; return; }
+  toast('担当者台帳を解析中…');
+  const all=(await fileToRows(file)).filter(r=>r.some(c=>(c||'').trim()));
+  if(!all.length){ toastDone('担当者データを読めませんでした'); e.target.value=''; return; }
+  // 見出し行（コード＋氏名/名前/担当者名）を探す。無ければ 1列目=コード,2列目=氏名
+  let hi=all.findIndex(r=>r.some(c=>/コード/.test(c))&&r.some(c=>/氏名|名前|担当者名|名称/.test(c)));
+  let cC,cN,start;
+  if(hi>=0){ const H=all[hi]; cC=pickCol(H,['コード']); cN=pickCol(H,['氏名','担当者名','名前','名称']); start=hi+1; }
+  else{ cC=0; cN=1; start=0; }
+  const g=(r,i)=>i>=0&&i<r.length?(r[i]||'').trim():'';
+  const rows=all.slice(start).map(r=>{ const code=g(r,cC), full=g(r,cN); return [code, tantoCleanName(full), full.replace(/　/g,' ').trim()]; })
+    .filter(r=>r[0]&&r[1]);
+  if(!rows.length){ toastDone('担当者データを読めませんでした'); e.target.value=''; return; }
+  toast(`${rows.length}件をGASへ登録中…`,true);
+  try{
+    const res=await fetch(GAS_URL,{method:'POST',headers:{'Content-Type':'text/plain;charset=utf-8'},body:JSON.stringify({action:'setTanto',rows})});
+    const j=await res.json(); if(!j.ok)throw new Error(j.error||'ng');
+    try{ localStorage.removeItem('alltanto'); }catch(_){}
+    await loadAllTanto(); fillTantoSelect(); syncTantoFromProfile();
+    const st=$('tantoMasterStat'); if(st)st.textContent=`GAS登録済み：${j.count}件`;
+    toastDone(`担当者台帳 ${j.count}件を登録しました`);
+  }catch(err){ const m=(err&&err.message)||String(err); toastDone('担当者の登録に失敗'); const st=$('tantoMasterStat'); if(st)st.textContent='登録に失敗: '+m; console.error(err); }
   e.target.value='';
 });
 
@@ -1376,4 +1433,5 @@ loadFormatsGAS();    // 登録済みの仕入先書式を読み込む
 loadLearnedGAS();    // 名寄せ学習データを読み込む
 loadAllMaster().then(()=>{ const e=$('masterLoadStat'); if(e)e.textContent=ALLMASTER.length?`商品マスタ ${ALLMASTER.length}件 検索可`:''; }); // 検索用マスタ
 loadAllTokui().then(()=>{ const e=$('tokuiStat'); if(e)e.textContent=ALLTOKUI.length?`得意先 ${ALLTOKUI.length}件 検索可`:'（得意先台帳が未登録。管理→得意先台帳マスタで取り込み）'; const st=$('tokuiMasterStat'); if(st&&ALLTOKUI.length)st.textContent=`登録済み：${ALLTOKUI.length}件`; }); // 得意先マスタ
+loadAllTanto().then(()=>{ fillTantoSelect(); syncTantoFromProfile(); const st=$('tantoMasterStat'); if(st&&TANTO.length)st.textContent=`登録済み：${TANTO.length}件`; }); // 担当者マスタ（GASがあれば上書き）
 </script>
