@@ -803,10 +803,12 @@ $('loadSample').addEventListener('click',()=>{ curDraftId=null; curDraftName='�
 
 // PDF読込（列バンド＋行クラスタ方式。この仕入先テンプレート向け）
 pdfjsLib.GlobalWorkerOptions.workerSrc='https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+// 日本語（CJK）の表示・抽出に必要なCMap/標準フォント
+const PDF_OPTS={cMapUrl:'https://cdn.jsdelivr.net/npm/pdfjs-dist@3.11.174/cmaps/',cMapPacked:true,standardFontDataUrl:'https://cdn.jsdelivr.net/npm/pdfjs-dist@3.11.174/standard_fonts/'};
 $('pdfIn').addEventListener('change',async e=>{
   const file=e.target.files[0]; if(!file)return; toast('PDF解析中…',true);
   try{
-    const buf=await file.arrayBuffer(); const pdf=await pdfjsLib.getDocument({data:buf}).promise;
+    const buf=await file.arrayBuffer(); const pdf=await pdfjsLib.getDocument({data:buf,...PDF_OPTS}).promise;
     let parsed=[]; const PAGES=[];
     for(let p=1;p<=pdf.numPages;p++){
       const page=await pdf.getPage(p); const vp=page.getViewport({scale:1});
@@ -1120,7 +1122,7 @@ function renderFormatSel(){
 }
 async function fmtLoadPdf(file){
   $('fmtMsg').textContent='PDF解析中…';
-  const buf=await file.arrayBuffer(); const pdf=await pdfjsLib.getDocument({data:buf}).promise;
+  const buf=await file.arrayBuffer(); const pdf=await pdfjsLib.getDocument({data:buf,...PDF_OPTS}).promise;
   const page=await pdf.getPage(1);
   fmtScale=1.3; const vp=page.getViewport({scale:fmtScale});
   const cv=$('fmtCanvas'); cv.width=vp.width; cv.height=vp.height;
