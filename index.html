@@ -844,6 +844,10 @@ function clusterRows(words,tol){ tol=tol||4;
     else rows.push({top:w.top,items:[w]}); });
   return rows;
 }
+// トークン正規化：全角数字→半角、語中の空白除去、全角記号の統一（例「２ ６ ８ ０ ０」→「26800」）
+function nz(t){ return String(t).replace(/\s+/g,'')
+  .replace(/[０-９]/g,c=>'0123456789'['０１２３４５６７８９'.indexOf(c)])
+  .replace(/，/g,',').replace(/．/g,'.').replace(/－/g,'-'); }
 // 既定の列位置（この仕入先様式）。範囲[左,右]で持つ
 const DEFAULT_COLS={name:[55,390], qty:[390,438], unit:[438,475], price:[475,538]};
 // 旧形式（name0,qty0…の境界）を範囲に変換
@@ -862,9 +866,9 @@ function parsePage(words, cols){
     if(!started){ if((joined.includes('No.')||joined.includes('品名'))&&joined.includes('数量'))started=true; info.push(['skip']); continue; }
     if(joined.includes('合計')||joined.includes('備考:')||/^\d+\/\d+$/.test(joined)){ info.push(['skip']); continue; }
     let name=band(r.items,C.name[0],C.name[1]).join(' ').trim(); name=name.replace(/\s*(納期|実働).*$/,'').trim();
-    const qty=band(r.items,C.qty[0],C.qty[1]).filter(t=>/^[\d,]+$/.test(t));
-    const unit=band(r.items,C.unit[0],C.unit[1]);
-    const price=band(r.items,C.price[0],C.price[1]).filter(t=>/^[\d,]+$/.test(t));
+    const qty=band(r.items,C.qty[0],C.qty[1]).map(nz).filter(t=>/^[\d,]+$/.test(t));
+    const unit=band(r.items,C.unit[0],C.unit[1]).map(nz);
+    const price=band(r.items,C.price[0],C.price[1]).map(nz).filter(t=>/^[\d,]+$/.test(t));
     const noise = name==='分割になります'||name.startsWith('※')||name.startsWith('(見積条件)')||name.startsWith('（見積条件');
     if(name.startsWith('【')) info.push(['sec',name]);
     else if(qty.length&&unit.length&&price.length) info.push(['num',name,unit[0],parseInt(qty[0].replace(/,/g,'')),parseInt(price[0].replace(/,/g,''))]);
@@ -946,28 +950,35 @@ async function learnCurrent(){
 }
 
 // 汎用解析（列位置に頼らず「単位＋数字」の並びで拾う。未知の書式向け）
-const UNITS=['組','枚','台','本','個','式','ｍ3','ｍ2','m3','m2','kg','ｋｇ','袋','缶','箱','巻','ｍ','m','ℓ','L','本','冊'];
+// ・全角数字＋字間空白のトークン（例「２ ６ ８ ０ ０」）に対応（nz正規化）
+// ・単位の後ろが「定価 単価 金額」の3値でも、金額の直前＝単価（＝仕入）を採用
+const UNITS=['組','枚','台','本','個','式','ｍ3','ｍ2','m3','m2','平方ｍ','平方m','kg','ｋｇ','袋','缶','箱','巻','ｾｯﾄ','ｍ','m','ℓ','L','冊'];
 function parseGeneric(words){
   const out=[]; const rows=clusterRows(words); let prevName='',started=false;
   const isNum=t=>/^[\d,]+$/.test(t);
   for(const r of rows){
-    const toks=r.items.slice().sort((a,b)=>a.x0-b.x0).map(w=>w.text);
+    const toks=r.items.slice().sort((a,b)=>a.x0-b.x0).map(w=>nz(w.text));
     const joined=toks.join('');
     if(!started){ if(joined.includes('数量')&&(joined.includes('単価')||joined.includes('金額')))started=true; continue; }
     if(joined.includes('合計')||joined.includes('備考:')||/^\d+\/\d+$/.test(joined)) continue;
     const ui=toks.findIndex(t=>UNITS.indexOf(t)>=0);
     if(ui>=0){
-      const after=toks.slice(ui+1).filter(isNum), before=toks.slice(0,ui).filter(isNum);
+      const before=toks.slice(0,ui).filter(isNum), after=toks.slice(ui+1).filter(isNum);
       if(after.length&&before.length){
-        const qty=parseInt(before[before.length-1].replace(/,/g,'')), cost=parseInt(after[0].replace(/,/g,''));
-        let name=toks.slice(0,ui).filter(t=>!isNum(t)).join(' ');
-        name=(prevName+' '+name).replace(/\s*(納期|実働).*/,'').replace(/^\d+\s*/,'').replace(/\s+/g,' ').trim();
+        const qty=parseInt(before[before.length-1].replace(/,/g,''));
+        let cost;
+        if(after.length>=2){ const c2=parseInt(after[after.length-2].replace(/,/g,'')), amt=parseInt(after[after.length-1].replace(/,/g,''));
+          // 金額＝数量×単価 が合えば「金額の直前＝単価」を採用（定価列を除外）、合わなければ先頭
+          cost=(qty>0&&Math.abs(qty*c2-amt)<=Math.max(2,amt*0.001))?c2:parseInt(after[0].replace(/,/g,'')); }
+        else cost=parseInt(after[0].replace(/,/g,''));
+        const np=toks.slice(0,ui).filter(t=>!isNum(t)).join('');
+        const name=(prevName+' '+np).replace(/\s*(納期|実働).*/,'').replace(/\s+/g,' ').trim();
         if(cost>0&&qty>0&&name.length>=2) out.push(['item',name,toks[ui],qty,cost]);
         prevName=''; continue;
       }
     }
     // 数字のない文字行＝品名候補として保持
-    const txt=toks.filter(t=>!isNum(t)&&UNITS.indexOf(t)<0).join(' ').trim();
+    const txt=toks.filter(t=>!isNum(t)&&UNITS.indexOf(t)<0).join('').trim();
     if(/^【.*】/.test(txt)){ out.push(['sec',txt.match(/【.*?】/)[0],'',0,0]); prevName=''; }
     else if(txt&&!txt.startsWith('※')&&txt.indexOf('分割')<0) prevName=txt;
   }
