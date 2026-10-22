@@ -67,6 +67,9 @@
   td.l .celled{text-align:left}td .celled{text-align:right}
   .qty{width:52px}.name{min-width:230px;white-space:normal}
   .matchsel{max-width:270px;font-size:.78rem;padding:3px 5px}
+  .msbtn{border:1px solid var(--line);background:#fff;border-radius:6px;cursor:pointer;padding:1px 5px;font-size:.8rem;line-height:1.4}
+  .msbtn:hover{background:#eef3ff;border-color:var(--accent)}
+  .msrow:hover{background:#eef3ff}
   .delrow{border-color:var(--line);background:transparent;color:var(--muted);padding:2px 7px;font-size:.8rem}
 
   .totals{display:flex;flex-wrap:wrap;gap:12px}
@@ -257,6 +260,19 @@
   <!-- ③ 明細＋名寄せ -->
   <div class="card">
     <h2>③ 明細・名寄せ（売単価＝原単価×マージン / 商品コードは候補から確認）</h2>
+    <div class="row" style="margin-bottom:8px">
+      <button type="button" class="ghost sm" id="addFromMasterBtn">＋ 商品マスタから追加</button>
+      <button type="button" class="ghost sm" id="addRow2">＋ 空の明細行</button>
+      <span class="hint" id="masterLoadStat"></span>
+    </div>
+    <div id="msPanel" hidden style="border:1px solid var(--line);border-radius:10px;padding:10px;margin-bottom:10px;background:#fff">
+      <div class="row" style="align-items:center">
+        <input id="msQuery" placeholder="品名・コードで検索（例：グレーチング 250 T-6）" style="flex:1;min-width:220px">
+        <button type="button" class="ghost sm" id="msClose">閉じる</button>
+      </div>
+      <p class="hint" id="msHint" style="margin:6px 0 0"></p>
+      <div id="msResults" style="margin-top:8px;max-height:280px;overflow:auto"></div>
+    </div>
     <div class="tablewrap">
       <table>
         <thead><tr>
@@ -613,7 +629,7 @@ function render(animate){
       `<td><input class="celled" style="width:72px" data-i="${i}" data-k="cost" value="${l.cost}"></td>`+
       `<td><input class="celled" style="width:48px" data-i="${i}" data-k="margin" value="${l.margin}"></td>`+
       `<td class="sell" data-sell="${i}">${yen(sell)}</td><td class="sell" data-amt="${i}">${yen(amt)}</td>`+
-      `<td class="l">${tag} <select class="matchsel" data-code="${i}">${opts}</select></td>`+
+      `<td class="l">${tag} <button class="msbtn" data-ms="${i}" title="商品マスタを検索して設定">🔍</button> <select class="matchsel" data-code="${i}">${opts}</select></td>`+
       `<td><button class="delrow" data-del="${i}">×</button></td>`;
     tb.appendChild(tr);
   });
@@ -706,10 +722,58 @@ $('rows').addEventListener('change',e=>{
   else if(el.classList.contains('celled') && (el.dataset.k==='name'||el.dataset.k==='unit')){ resolveAll(); }
 });
 $('rows').addEventListener('click',e=>{
-  if(e.target.dataset.del!==undefined){ LINES.splice(+e.target.dataset.del,1); render(); }
+  if(e.target.dataset.del!==undefined){ LINES.splice(+e.target.dataset.del,1); render(); return; }
+  if(e.target.dataset.ms!==undefined){ openMasterSearch(+e.target.dataset.ms); }
 });
 $('applyAll').addEventListener('click',()=>{ applyProfileToLines(); render(); toast('条件を全明細に適用しました'); });
-$('addRow').addEventListener('click',()=>{const l={kind:'item',name:'',qty:1,unit:'',cost:0,margin:curProfile().defMargin,roundUnit:curProfile().defUnit,roundMode:curProfile().defMode,code:'',cand:[],verdict:'new'};LINES.push(l);render();});
+function addEmptyRow(){ const l={kind:'item',name:'',qty:1,unit:'',cost:0,margin:curProfile().defMargin,roundUnit:curProfile().defUnit,roundMode:curProfile().defMode,code:'',cand:[],verdict:'new'};LINES.push(l);render(); }
+$('addRow').addEventListener('click',addEmptyRow);
+$('addRow2').addEventListener('click',addEmptyRow);
+
+// ===== 商品マスタ検索（全件をGASから取得→端末キャッシュ→部分一致） =====
+let ALLMASTER=[], msTarget=-1;
+async function loadAllMaster(){
+  try{ const c=JSON.parse(localStorage.getItem('allmaster')||'null');
+    if(c&&c.items&&c.items.length&&c.t>Date.now()-864e5){ ALLMASTER=c.items; return; } }catch(_){}
+  if(GAS_URL){ try{
+    const r=await fetch(GAS_URL,{method:'POST',headers:{'Content-Type':'text/plain;charset=utf-8'},body:JSON.stringify({action:'listMaster'})});
+    const j=await r.json(); if(j&&j.ok&&j.items){ ALLMASTER=j.items;
+      try{ localStorage.setItem('allmaster',JSON.stringify({items:ALLMASTER,t:Date.now()})); }catch(_){}
+      return; } }catch(_){}
+  }
+  ALLMASTER = MASTER.map(([c,n,u])=>({code:c,name:n,unit:u}));  // GAS不可時は内蔵マスタ
+}
+function searchMaster(q,k=30){ q=(q||'').trim(); if(!q)return [];
+  const ts=q.split(/\s+/).filter(Boolean);
+  return ALLMASTER.filter(m=>{ const hay=m.code+' '+m.name; return ts.every(t=>hay.includes(t)); }).slice(0,k); }
+function renderMsResults(){
+  const q=$('msQuery').value, list=searchMaster(q,30);
+  $('msResults').innerHTML = list.length
+    ? list.map(m=>`<div class="msrow" data-code="${esc(m.code)}" data-name="${esc(m.name)}" data-unit="${esc(m.unit)}" style="padding:6px 8px;border-bottom:1px solid var(--line);cursor:pointer;display:flex;gap:8px;align-items:center"><span class="mono" style="color:var(--accent);min-width:46px;font-weight:700">${esc(m.code)}</span><span style="flex:1">${esc(m.name)}</span><span class="hint" style="white-space:nowrap">${esc(m.unit)}</span></div>`).join('')
+    : (q? '<p class="hint">該当なし。別のキーワードで試してください。</p>' : '<p class="hint">キーワードを入力（スペース区切りで絞り込み）</p>');
+}
+async function openMasterSearch(idx){
+  msTarget=idx; $('msPanel').hidden=false;
+  $('msHint').textContent = idx<0 ? 'クリックで明細に追加します（続けて複数追加可）。仕入単価は追加後に入力してください。'
+                                  : 'クリックでこの行の商品コードを設定します。';
+  if(!ALLMASTER.length){ $('msResults').innerHTML='<p class="hint">商品マスタを読込中…</p>'; await loadAllMaster(); }
+  $('msQuery').value=''; renderMsResults(); $('msQuery').focus(); $('msPanel').scrollIntoView({block:'nearest'});
+}
+function closeMs(){ $('msPanel').hidden=true; msTarget=-1; }
+function addFromMaster(m){ LINES.push({kind:'item',name:m.name,qty:1,unit:m.unit,cost:0,
+  margin:curProfile().defMargin,roundUnit:curProfile().defUnit,roundMode:curProfile().defMode,
+  code:m.code,cand:[{code:m.code,name:m.name,unit:m.unit,s:99}],verdict:'ok'}); render(); }
+$('addFromMasterBtn').addEventListener('click',()=>openMasterSearch(-1));
+$('msClose').addEventListener('click',closeMs);
+$('msQuery').addEventListener('input',renderMsResults);
+$('msResults').addEventListener('click',e=>{
+  const r=e.target.closest('[data-code]'); if(!r)return;
+  const m={code:r.dataset.code,name:r.dataset.name,unit:r.dataset.unit};
+  if(msTarget<0){ addFromMaster(m); toast(`${m.code}｜${m.name} を追加`); }
+  else{ const l=LINES[msTarget]; if(l){ l.code=m.code; l.verdict='ok';
+      if(!l.cand.some(c=>c.code===m.code)) l.cand.unshift({code:m.code,name:m.name,unit:m.unit,s:99}); render(); }
+    toast(`${m.code} を設定しました`); closeMs(); }
+});
 
 // 常宏サンプル
 const SAMPLE=[
@@ -1165,4 +1229,5 @@ showStep(1);
 loadProfilesGAS();   // GASに共有プリセットがあれば上書き
 loadFormatsGAS();    // 登録済みの仕入先書式を読み込む
 loadLearnedGAS();    // 名寄せ学習データを読み込む
+loadAllMaster().then(()=>{ const e=$('masterLoadStat'); if(e)e.textContent=ALLMASTER.length?`商品マスタ ${ALLMASTER.length}件 検索可`:''; }); // 検索用マスタ
 </script>
