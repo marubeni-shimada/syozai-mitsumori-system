@@ -496,8 +496,8 @@ async function resolveAll(){
   const items=LINES.filter(l=>l.kind==='item'); if(!items.length)return;
   if(GAS_URL){ try{ toast('名寄せ中…',true); const j=await gasMatch(items.map(l=>({name:l.name,unit:l.unit})));
       items.forEach((l,i)=>applyResult(l,j.results[i])); render();
-      setMasterStat(`GAS接続：${j.masterCount}件`); toastDone(`名寄せ：全件マスタ（GAS ${j.masterCount}件）`); return; }
-    catch(e){ setMasterStat('GAS接続不可：内蔵マスタ使用中'); toastDone('GAS接続不可：内蔵マスタで名寄せ'); } }
+      setMasterStat(`スプレッドシート商品台帳：${j.masterCount}件 使用中`); toastDone(`名寄せ：スプレッドシート商品台帳 ${j.masterCount}件`); return; }
+    catch(e){ setMasterStat('スプレッドシート接続不可：内蔵マスタ使用中'); toastDone('接続不可：内蔵マスタで名寄せ'); } }
   items.forEach(l=>applyResult(l,matchTop(l.name,l.unit))); render();
 }
 // CSV解析（ダブルクオート対応）
@@ -770,18 +770,18 @@ function addEmptyRow(){ const l={kind:'item',name:'',qty:1,unit:'',cost:0,margin
 $('addRow').addEventListener('click',addEmptyRow);
 $('addRow2').addEventListener('click',addEmptyRow);
 
-// ===== 商品マスタ検索（全件をGASから取得→端末キャッシュ→部分一致） =====
-let ALLMASTER=[], msTarget=-1;
+// ===== 商品マスタ検索（全件をスプレッドシートから取得→端末キャッシュ→部分一致） =====
+let ALLMASTER=[], msTarget=-1, MASTER_FROM_SHEET=false;
 async function loadAllMaster(){
   try{ const c=JSON.parse(localStorage.getItem('allmaster')||'null');
-    if(c&&c.items&&c.items.length&&c.t>Date.now()-864e5){ ALLMASTER=c.items; return; } }catch(_){}
+    if(c&&c.items&&c.items.length&&c.t>Date.now()-864e5){ ALLMASTER=c.items; MASTER_FROM_SHEET=!!c.sheet; return; } }catch(_){}
   if(GAS_URL){ try{
     const r=await fetch(GAS_URL,{method:'POST',headers:{'Content-Type':'text/plain;charset=utf-8'},body:JSON.stringify({action:'listMaster'})});
-    const j=await r.json(); if(j&&j.ok&&j.items){ ALLMASTER=j.items;
-      try{ localStorage.setItem('allmaster',JSON.stringify({items:ALLMASTER,t:Date.now()})); }catch(_){}
+    const j=await r.json(); if(j&&j.ok&&j.items){ ALLMASTER=j.items; MASTER_FROM_SHEET=true;
+      try{ localStorage.setItem('allmaster',JSON.stringify({items:ALLMASTER,t:Date.now(),sheet:true})); }catch(_){}
       return; } }catch(_){}
   }
-  ALLMASTER = MASTER.map(([c,n,u])=>({code:c,name:n,unit:u}));  // GAS不可時は内蔵マスタ
+  ALLMASTER = MASTER.map(([c,n,u])=>({code:c,name:n,unit:u})); MASTER_FROM_SHEET=false;  // スプレッドシート不可時は内蔵マスタ
 }
 function searchMaster(q,k=30){ q=(q||'').trim(); if(!q)return [];
   const ts=q.split(/\s+/).filter(Boolean);
@@ -1194,7 +1194,10 @@ $('masterIn').addEventListener('change',async e=>{
     const res=await fetch(GAS_URL,{method:'POST',headers:{'Content-Type':'text/plain;charset=utf-8'},body:JSON.stringify({action:'setMaster',rows})});
     const j=await res.json();
     if(!j.ok||typeof j.count!=='number')throw new Error('スプレッドシート側が未更新の可能性。Code.gsを「新しいバージョン」で再デプロイしてください');
-    setMasterStat(`スプレッドシート登録済み：${j.count}件`); toastDone(`商品台帳 ${j.count}件を登録しました`); resolveAll();
+    try{localStorage.removeItem('allmaster');}catch(_){}
+    await loadAllMaster();  // 検索用マスタを取り直す
+    const le=$('masterLoadStat'); if(le)le.textContent=`商品マスタ ${ALLMASTER.length}件 検索可`;
+    setMasterStat(`スプレッドシート商品台帳：${j.count}件 使用中`); toastDone(`商品台帳 ${j.count}件を登録しました`); resolveAll();
   }catch(err){ const m=(err&&err.message)||String(err); toastDone('登録に失敗'); setMasterStat('登録に失敗: '+m); console.error(err); }
   e.target.value='';
 });
@@ -1431,7 +1434,8 @@ showStep(1);
 loadProfilesGAS();   // GASに共有プリセットがあれば上書き
 loadFormatsGAS();    // 登録済みの仕入先書式を読み込む
 loadLearnedGAS();    // 名寄せ学習データを読み込む
-loadAllMaster().then(()=>{ const e=$('masterLoadStat'); if(e)e.textContent=ALLMASTER.length?`商品マスタ ${ALLMASTER.length}件 検索可`:''; }); // 検索用マスタ
+loadAllMaster().then(()=>{ const e=$('masterLoadStat'); if(e)e.textContent=ALLMASTER.length?`商品マスタ ${ALLMASTER.length}件 検索可`:'';
+  setMasterStat(MASTER_FROM_SHEET?`スプレッドシート商品台帳：${ALLMASTER.length}件 使用中`:`内蔵マスタ使用中（${ALLMASTER.length}件）`); }); // 検索用マスタ＋状態表示
 loadAllTokui().then(()=>{ const e=$('tokuiStat'); if(e)e.textContent=ALLTOKUI.length?`得意先 ${ALLTOKUI.length}件 検索可`:'（得意先台帳が未登録。管理→得意先台帳マスタで取り込み）'; const st=$('tokuiMasterStat'); if(st&&ALLTOKUI.length)st.textContent=`登録済み：${ALLTOKUI.length}件`; }); // 得意先マスタ
 loadAllTanto().then(()=>{ fillTantoSelect(); syncTantoFromProfile(); const st=$('tantoMasterStat'); if(st&&TANTO.length)st.textContent=`登録済み：${TANTO.length}件`; }); // 担当者マスタ（GASがあれば上書き）
 </script>
