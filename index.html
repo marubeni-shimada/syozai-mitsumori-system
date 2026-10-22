@@ -955,14 +955,18 @@ async function learnCurrent(){
 // ・全角数字＋字間空白のトークン（例「２ ６ ８ ０ ０」）に対応（nz正規化）
 // ・単位の後ろが「定価 単価 金額」の3値でも、金額の直前＝単価（＝仕入）を採用
 const UNITS=['組','枚','台','本','個','式','ｍ3','ｍ2','m3','m2','平方ｍ','平方m','kg','ｋｇ','袋','缶','箱','巻','ｾｯﾄ','ｍ','m','ℓ','L','冊'];
+const SEC_NOISE=/以下余白|特記事項|^頁$|^No|小計|^合計|^以下$|^余白$/;
+// 先頭の行番号(単独数字)だけ落とし、残り（数字含む）を連結した行テキスト
+function lineText(toks){ const t=toks.slice(); if(t.length&&/^[\d,]+$/.test(t[0]))t.shift(); return t.filter(x=>UNITS.indexOf(x)<0).join(''); }
 function parseGeneric(words){
-  const out=[]; const rows=clusterRows(words); let prevName='',started=false;
+  const out=[]; const rows=clusterRows(words); let buf='',started=false;
   const isNum=t=>/^[\d,]+$/.test(t);
+  const flushSec=()=>{ if(buf&&!SEC_NOISE.test(buf)&&buf.length>=3) out.push(['sec',buf,'',0,0]); buf=''; };
   for(const r of rows){
     const toks=r.items.slice().sort((a,b)=>a.x0-b.x0).map(w=>nz(w.text));
     const joined=toks.join('');
     if(!started){ if(joined.includes('数量')&&(joined.includes('単価')||joined.includes('金額')))started=true; continue; }
-    if(joined.includes('合計')||joined.includes('備考:')||/^\d+\/\d+$/.test(joined)) continue;
+    if(joined.includes('合計')||/^\d+\/\d+$/.test(joined)){ flushSec(); continue; }
     const ui=toks.findIndex(t=>UNITS.indexOf(t)>=0);
     if(ui>=0){
       const before=toks.slice(0,ui).filter(isNum), after=toks.slice(ui+1).filter(isNum);
@@ -974,16 +978,17 @@ function parseGeneric(words){
           cost=(qty>0&&Math.abs(qty*c2-amt)<=Math.max(2,amt*0.001))?c2:parseInt(after[0].replace(/,/g,'')); }
         else cost=parseInt(after[0].replace(/,/g,''));
         const np=toks.slice(0,ui).filter(t=>!isNum(t)).join('');
-        const name=(prevName+' '+np).replace(/\s*(納期|実働).*/,'').replace(/\s+/g,' ').trim();
+        const name=(buf+' '+np).replace(/\s+/g,' ').trim();   // 直前の品名行＋当行＝品名
         if(cost>0&&qty>0&&name.length>=2) out.push(['item',name,toks[ui],qty,cost]);
-        prevName=''; continue;
+        buf=''; continue;
       }
     }
-    // 数字のない文字行＝品名候補として保持
-    const txt=toks.filter(t=>!isNum(t)&&UNITS.indexOf(t)<0).join('').trim();
-    if(/^【.*】/.test(txt)){ out.push(['sec',txt.match(/【.*?】/)[0],'',0,0]); prevName=''; }
-    else if(txt&&!txt.startsWith('※')&&txt.indexOf('分割')<0) prevName=txt;
+    // 数字のない文字行。次が明細行なら品名、そうでなければ摘要として取り込む
+    const txt=lineText(toks);
+    if(/^【.*】/.test(txt)){ flushSec(); out.push(['sec',txt.match(/【.*?】/)[0],'',0,0]); }
+    else if(txt&&txt.indexOf('分割')<0){ if(buf)flushSec(); buf=txt; }
   }
+  flushSec();
   return out;
 }
 
@@ -997,7 +1002,7 @@ function buildCsv(){
     if(l.kind==='item'){ const sell=lineSell(l), amt=sell*l.qty, camt=l.cost*l.qty;
       r[14]='1';r[15]=l.code||'';r[17]=l.name;r[18]='13';r[19]=l.unit;r[20]='0';r[21]='0';r[22]='0000';
       r[23]=String(l.qty);r[24]=String(sell);r[25]=String(amt);r[27]=String(amt);r[28]=String(camt);r[29]=String(l.cost);r[31]='2';r[32]='2'; }
-    else{ r[14]='20';r[17]=l.name;r[18]='0';r[20]='0';r[21]='0';['23','24','25','27','28','29'].forEach(c=>r[+c]='0');r[31]='0';r[32]='0'; }
+    else{ r[14]='5';r[17]=l.name;r[18]='0';r[20]='0';r[21]='0';['23','24','25','27','28','29'].forEach(c=>r[+c]='0');r[31]='0';r[32]='0'; }  // 摘要・注記行は種別5（弥生実データ準拠）
     rows.push(r.map(v=>`"${String(v).replace(/"/g,'""')}"`).join(',')); });
   return rows.join('\r\n')+'\r\n';
 }
