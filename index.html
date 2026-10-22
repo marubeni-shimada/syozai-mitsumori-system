@@ -71,6 +71,9 @@
   .msbtn{border:1px solid var(--line);background:#fff;border-radius:6px;cursor:pointer;padding:1px 5px;font-size:.8rem;line-height:1.4}
   .msbtn:hover{background:#eef3ff;border-color:var(--accent)}
   .msrow:hover{background:#eef3ff}
+  .rangein{width:84px;border:1px solid var(--line);border-radius:6px;padding:4px 6px;background:#fff;font-size:.85rem}
+  .rangein:focus{border-color:var(--accent);outline:none;box-shadow:0 0 0 2px #2f6fb022}
+  .rangein::placeholder{color:#9aa3ad}
   .delrow{border-color:var(--line);background:transparent;color:var(--muted);padding:2px 7px;font-size:.8rem}
 
   .totals{display:flex;flex-wrap:wrap;gap:12px}
@@ -572,8 +575,8 @@ function renderRules(){
   const p=curProfile(); const tb=$('ruleRows');
   tb.innerHTML=(p.rules||[]).map((r,i)=>
     `<tr>`+
-    `<td><input class="celled rl" data-ri="${i}" data-rk="min" style="width:80px" value="${r.min??''}"></td>`+
-    `<td><input class="celled rl" data-ri="${i}" data-rk="max" style="width:80px" value="${r.max??''}"></td>`+
+    `<td><input class="rl rangein" type="number" inputmode="numeric" placeholder="0" data-ri="${i}" data-rk="min" value="${r.min??''}"></td>`+
+    `<td><input class="rl rangein" type="number" inputmode="numeric" placeholder="空=なし" data-ri="${i}" data-rk="max" value="${r.max??''}"></td>`+
     `<td><input class="celled rl" data-ri="${i}" data-rk="margin" style="width:56px" value="${r.margin??''}"></td>`+
     `<td><select class="rl" data-ri="${i}" data-rk="unit"><option value="1" ${r.unit==1?'selected':''}>1円</option><option value="10" ${r.unit==10?'selected':''}>10円</option><option value="100" ${r.unit==100?'selected':''}>100円</option></select></td>`+
     `<td><select class="rl" data-ri="${i}" data-rk="mode"><option value="round" ${r.mode==='round'?'selected':''}>四捨五入</option><option value="ceil" ${r.mode==='ceil'?'selected':''}>切上げ</option><option value="floor" ${r.mode==='floor'?'selected':''}>切捨て</option></select></td>`+
