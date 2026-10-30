@@ -253,8 +253,8 @@
     <div class="row">
       <div class="f"><label>見積番号（自動採番）</label><input class="s" id="hNo" value="" placeholder="エクスポート時に自動" readonly></div>
       <div class="f"><label>見積日（自動・今日）</label><input class="s" id="hDate" value="" readonly title="作成日（今日）が自動で入ります"></div>
-      <div class="f"><label>得意先コード（検索）</label><input class="s" id="hTokui" value="" autocomplete="off"></div>
-      <div class="f"><label>得意先名（検索）</label><input class="m" id="hTokuiName" value="" autocomplete="off"></div>
+      <div class="f"><label>得意先コード（検索プルダウン）</label><input class="s" id="hTokui" value="" list="tokuiCodeList" autocomplete="off"><datalist id="tokuiCodeList"></datalist></div>
+      <div class="f"><label>得意先名（検索プルダウン）</label><input class="m" id="hTokuiName" value="" list="tokuiNameList" autocomplete="off"><datalist id="tokuiNameList"></datalist></div>
       <div class="f"><label>担当者コード</label><select id="hTanto" style="min-width:150px"></select></div>
     </div>
     <div class="row" style="margin-top:10px">
@@ -921,23 +921,19 @@ function populateTokuiLists(){
   cl.innerHTML=ALLTOKUI.map(t=>`<option value="${esc(t.code)}">${esc(t.name)}</option>`).join('');
   nl.innerHTML=ALLTOKUI.map(t=>`<option value="${esc(t.name)}">${esc(t.code)}</option>`).join('');
 }
-// 得意先コード／名の欄を「クリックで常に候補が開く検索プルダウン」にする
-// （値が入っていても、クリックすれば他の候補を選び直せる）
-function tkComboRow(t){ return `<div class="msrow" data-tc="${esc(t.code)}" style="padding:6px 8px;border-bottom:1px solid var(--line);cursor:pointer;display:flex;gap:8px;align-items:center"><span class="mono" style="color:var(--accent);min-width:46px;font-weight:700">${esc(t.code)}</span><span style="flex:1">${esc(t.name)}</span></div>`; }
-function attachTokuiCombo(id){ const el=$(id); if(!el)return;
-  const wrap=el.parentNode; wrap.style.position='relative';
-  const box=document.createElement('div');
-  box.style.cssText='position:absolute;left:0;right:0;top:100%;z-index:40;background:var(--card,#fff);border:1px solid var(--line);border-radius:8px;max-height:260px;overflow:auto;display:none;box-shadow:0 8px 20px rgba(0,0,0,.18)';
-  wrap.appendChild(box);
-  const render=()=>{ const q=(el.value||'').trim(); const list=q?searchTokui(q,40):ALLTOKUI.slice(0,60);
-    box.innerHTML = list.length ? list.map(tkComboRow).join('') : '<p class="hint" style="padding:6px 8px;margin:0">該当なし</p>';
-    box.style.display='block'; };
-  el.addEventListener('focus',render);
-  el.addEventListener('input',render);
-  el.addEventListener('blur',()=>{ setTimeout(()=>{ box.style.display='none'; },200); });
-  box.addEventListener('mousedown',e=>{ const r=e.target.closest('[data-tc]'); if(r){ pickTokui(r.dataset.tc); box.style.display='none'; el.blur(); } });
-}
-attachTokuiCombo('hTokui'); attachTokuiCombo('hTokuiName');
+function fillFromCode(){ const c=($('hTokui').value||'').trim(); const t=ALLTOKUI.find(x=>x.code===c); if(!t)return;
+  $('hTokuiName').value=t.name; if($('hTel'))$('hTel').value=t.tel||''; if($('hFax'))$('hFax').value=t.fax||'';
+  if($('hTanto')&&t.tanto&&!$('hTanto').value)$('hTanto').value=t.tanto; updateTokuiTag(); saveDraft(); }
+function fillFromName(){ const n=($('hTokuiName').value||'').trim(); const t=ALLTOKUI.find(x=>x.name===n); if(!t)return;
+  $('hTokui').value=t.code; if($('hTel'))$('hTel').value=t.tel||''; if($('hFax'))$('hFax').value=t.fax||'';
+  if($('hTanto')&&t.tanto&&!$('hTanto').value)$('hTanto').value=t.tanto; updateTokuiTag(); saveDraft(); }
+if($('hTokui')){ $('hTokui').addEventListener('change',fillFromCode); $('hTokui').addEventListener('input',fillFromCode); }
+if($('hTokuiName')){ $('hTokuiName').addEventListener('change',fillFromName); $('hTokuiName').addEventListener('input',fillFromName); }
+// 選択後もプルダウンで他候補を出せるよう、フォーカス時は一旦クリア（選ばなければ元に戻す）
+function comboReopen(el){ if(!el)return;
+  el.addEventListener('focus',()=>{ el.dataset.prev=el.value; el.value=''; });
+  el.addEventListener('blur',()=>{ if(!el.value && el.dataset.prev){ el.value=el.dataset.prev; } }); }
+comboReopen($('hTokui')); comboReopen($('hTokuiName'));
 
 // 常宏サンプル
 const SAMPLE=[
