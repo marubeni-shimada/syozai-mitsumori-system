@@ -194,8 +194,7 @@
   <div class="card">
     <h2>① 見積を読み込む</h2>
     <div class="row">
-      <span class="filebtn"><button type="button">PDFを読み込む</button><input type="file" id="pdfIn" accept="application/pdf"></span>
-      <span class="filebtn"><button type="button">＋PDFを追加（別の仕入先）</button><input type="file" id="pdfAddIn" accept="application/pdf"></span>
+      <span class="filebtn"><button type="button">PDFを読み込む（複数可）</button><input type="file" id="pdfIn" accept="application/pdf" multiple></span>
       <button type="button" class="ghost" id="loadSample">サンプルを読込</button>
       <button type="button" class="ghost" id="addRow">＋ 明細行を追加</button>
       <button type="button" class="ghost" id="clearDraft">新規（クリア）</button>
@@ -245,6 +244,10 @@
   <!-- ② 設定 -->
   <div class="card">
     <h2>② 見積ヘッダ</h2>
+    <div class="row" style="margin-bottom:6px">
+      <span class="filebtn"><button type="button">＋PDFを追加（別の仕入先）</button><input type="file" id="pdfAddIn" accept="application/pdf" multiple></span>
+      <span class="hint">今の見積に別の仕入先の明細を足します（会社ごとに見出しが付きます）</span>
+    </div>
     <div class="row" style="margin-bottom:6px">
       <div class="f" style="flex:1;min-width:240px"><label>得意先を検索（名称・フリガナ・コード）</label>
         <input id="tokuiQuery" placeholder="例：常宏／ｼﾞｮｳｺｳ／1430" autocomplete="off"></div>
@@ -956,7 +959,7 @@ function loadLines(arr,opts){
     if(l.kind==='item')recalcMatch(l); return l;});
   LINES = opts.append ? LINES.concat(mapped) : mapped;
   applyProfileToLines();
-  render(true); resolveAll();
+  render(true); if(!opts.defer) resolveAll();
 }
 $('loadSample').addEventListener('click',()=>{ curDraftId=null; curDraftName='常宏サンプル'; if($('hNo'))$('hNo').value=''; loadLines(SAMPLE); });
 
@@ -986,37 +989,46 @@ async function parsePdfFile(file){
   if(!parsed.some(r=>r[0]==='item')){ parsed=[]; PAGES.forEach(w=>{parsed=parsed.concat(parseGeneric(w));}); generic=true; mode='汎用'; }
   return {parsed,fmt,mode,generic,supplier:fmt?fmt.name:''};
 }
-// 新規読込（入れ替え）
+// 新規読込（複数ファイル可。1枚目＝入れ替え、2枚目以降＝追記＝複数仕入先を1見積に）
 $('pdfIn').addEventListener('change',async e=>{
-  const file=e.target.files[0]; if(!file)return; toast('PDF解析中…',true);
-  try{
-    const {parsed,fmt,mode,generic,supplier}=await parsePdfFile(file);
-    if(parsed.some(r=>r[0]==='item')){
+  const files=Array.from(e.target.files||[]); if(!files.length)return; toast('PDF解析中…',true);
+  let replaced=false, total=0, nfile=0;
+  for(const file of files){
+    let res; try{ res=await parsePdfFile(file); }catch(err){ console.error(err); continue; }
+    const {parsed,fmt,supplier}=res;
+    if(!parsed.some(r=>r[0]==='item')) continue;
+    if(!replaced){
       curDraftId=null; curDraftName=(file.name||'見積').replace(/\.pdf$/i,'');  // PDF名で新しい続きを作る
-      if($('hNo'))$('hNo').value='';   // 新しい見積＝番号リセット（次のエクスポートで新採番）
-      curSupplier=supplier;   // 学習の紐付け先（判別できた仕入先）
-      if(fmt&&$('hSupplier')&&!$('hSupplier').value) $('hSupplier').value=fmt.name;  // 仕入先名を自動セット
-      loadLines(parsed,{supplier});
-      const n=parsed.filter(r=>r[0]==='item').length;
-      toastDone(generic?`明細 ${n} 件を自動抽出（要確認）`:`明細 ${n} 件を読込（${mode}）`); }
-    else toastDone('明細を自動抽出できませんでした。手入力で。');
-  }catch(err){ toastDone('PDF解析に失敗しました'); console.error(err); }
+      if($('hNo'))$('hNo').value='';   // 新しい見積＝番号リセット
+      curSupplier=supplier;
+      if(fmt&&$('hSupplier')&&!$('hSupplier').value) $('hSupplier').value=fmt.name;
+      loadLines(parsed,{supplier,defer:true}); replaced=true;
+    } else {
+      curSupplier=supplier||curSupplier;
+      loadLines(parsed,{supplier,append:true,defer:true});
+    }
+    total+=parsed.filter(r=>r[0]==='item').length; nfile++;
+  }
+  if(total) resolveAll();   // 全ファイル読み込み後にまとめて名寄せ
+  toastDone(total?`明細 ${total} 件を読込（${nfile}ファイル）`:'明細を自動抽出できませんでした。手入力で。');
   e.target.value='';
 });
-// 追加読込（今の見積に足す。複数仕入先を1見積にまとめる）
+// 追加読込（②から。今の見積に足す。複数ファイル可）
 $('pdfAddIn').addEventListener('change',async e=>{
-  const file=e.target.files[0]; if(!file)return;
-  if(!LINES.length){ toast('先に1件目のPDFを読み込んでください'); e.target.value=''; return; }
+  const files=Array.from(e.target.files||[]); if(!files.length)return;
+  if(!LINES.length){ toast('先に①でPDFを読み込んでください'); e.target.value=''; return; }
   toast('PDFを追加解析中…',true);
-  try{
-    const {parsed,mode,generic,supplier}=await parsePdfFile(file);
-    if(parsed.some(r=>r[0]==='item')){
-      curSupplier=supplier||curSupplier;
-      loadLines(parsed,{supplier,append:true});   // 得意先・見積番号・見積日はそのまま、明細だけ追記
-      const n=parsed.filter(r=>r[0]==='item').length;
-      toastDone(`追加：明細 ${n} 件（${supplier||mode}）`); }
-    else toastDone('明細を自動抽出できませんでした。');
-  }catch(err){ toastDone('PDF解析に失敗しました'); console.error(err); }
+  let total=0, nfile=0;
+  for(const file of files){
+    let res; try{ res=await parsePdfFile(file); }catch(err){ console.error(err); continue; }
+    const {parsed,supplier}=res;
+    if(!parsed.some(r=>r[0]==='item')) continue;
+    curSupplier=supplier||curSupplier;
+    loadLines(parsed,{supplier,append:true,defer:true});   // 得意先・見積番号・見積日はそのまま、明細だけ追記
+    total+=parsed.filter(r=>r[0]==='item').length; nfile++;
+  }
+  if(total) resolveAll();   // 追加後にまとめて名寄せ
+  toastDone(total?`追加：明細 ${total} 件（${nfile}ファイル）`:'明細を自動抽出できませんでした。');
   e.target.value='';
 });
 // 近いtopを同一行にまとめる
