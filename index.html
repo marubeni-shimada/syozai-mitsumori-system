@@ -678,7 +678,7 @@ function render(animate){
     if(l.kind==='item' && multiSup && (l.supplier||'')!==shownSup){
       shownSup=l.supplier||'';
       const hr=document.createElement('tr'); hr.className='supdiv';
-      hr.innerHTML=`<td colspan="10" style="background:var(--chip,#eef2ff);color:var(--accent);font-weight:700;padding:6px 10px;border-top:2px solid var(--accent)">▼ ${esc(shownSup||'（仕入先未設定）')}</td>`;
+      hr.innerHTML=`<td colspan="10" style="background:var(--chip,#eef2ff);padding:5px 10px;border-top:2px solid var(--accent)">▼ <input class="supname" data-sup="${esc(shownSup)}" value="${esc(shownSup)}" placeholder="会社名を入力" style="border:1px solid var(--line);background:var(--bg,#fff);color:var(--accent);font-weight:700;border-radius:6px;padding:3px 8px;min-width:200px;font-size:.9rem"></td>`;
       tb.appendChild(hr);
     }
     const tr=document.createElement('tr');
@@ -797,6 +797,11 @@ $('rows').addEventListener('change',e=>{
   const el=e.target;
   if(el.classList.contains('matchsel')){ const i=+el.dataset.code; LINES[i].code=el.value; recompute(); }
   else if(el.classList.contains('celled') && (el.dataset.k==='name'||el.dataset.k==='unit')){ resolveAll(); }
+  else if(el.classList.contains('supname')){   // 区切りの会社名を編集→そのグループの仕入先名を一括更新
+    const oldS=el.dataset.sup||'', newS=(el.value||'').trim();
+    LINES.forEach(l=>{ if(l.kind==='item' && (l.supplier||'')===oldS) l.supplier=newS; });
+    render(); saveDraft();
+  }
 });
 $('rows').addEventListener('click',e=>{
   if(e.target.dataset.del!==undefined){ LINES.splice(+e.target.dataset.del,1); render(); return; }
