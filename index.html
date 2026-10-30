@@ -927,13 +927,8 @@ function fillFromCode(){ const c=($('hTokui').value||'').trim(); const t=ALLTOKU
 function fillFromName(){ const n=($('hTokuiName').value||'').trim(); const t=ALLTOKUI.find(x=>x.name===n); if(!t)return;
   $('hTokui').value=t.code; if($('hTel'))$('hTel').value=t.tel||''; if($('hFax'))$('hFax').value=t.fax||'';
   if($('hTanto')&&t.tanto&&!$('hTanto').value)$('hTanto').value=t.tanto; updateTokuiTag(); saveDraft(); }
-if($('hTokui')){ $('hTokui').addEventListener('change',fillFromCode); $('hTokui').addEventListener('input',fillFromCode); }
-if($('hTokuiName')){ $('hTokuiName').addEventListener('change',fillFromName); $('hTokuiName').addEventListener('input',fillFromName); }
-// 選択後もプルダウンで他候補を出せるよう、フォーカス時は一旦クリア（選ばなければ元に戻す）
-function comboReopen(el){ if(!el)return;
-  el.addEventListener('focus',()=>{ el.dataset.prev=el.value; el.value=''; });
-  el.addEventListener('blur',()=>{ if(!el.value && el.dataset.prev){ el.value=el.dataset.prev; } }); }
-comboReopen($('hTokui')); comboReopen($('hTokuiName'));
+if($('hTokui')){ $('hTokui').addEventListener('change',fillFromCode); }
+if($('hTokuiName')){ $('hTokuiName').addEventListener('change',fillFromName); }
 
 // 常宏サンプル
 const SAMPLE=[
