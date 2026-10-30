@@ -201,14 +201,6 @@
       <div class="f"><label>書式（通常は自動判別）</label><select id="readFormat" style="min-width:150px"><option value="">自動判別</option></select></div>
     </div>
     <p class="hint">PDFを読み込むと仕入先を自動で判別して解析します（登録済みの会社は電話番号で識別）。うまくいかない時だけ、右の「書式」で会社を手動指定してください。読み込んだ明細は表で直接直せます。</p>
-    <div class="row" style="margin-top:10px">
-      <div class="f" style="flex:1;min-width:260px">
-        <label>得意先（宛先）を名寄せ検索 <span id="curTokuiTag" class="hint" style="margin-left:8px;color:var(--accent)"></span></label>
-        <input id="tokuiQuery1" placeholder="社名をざっくり（㈱・スペース不要）例：あすか工業" autocomplete="off">
-        <div id="tokuiResults1" style="margin:4px 0 0;max-height:220px;overflow:auto;border:1px solid var(--line);border-radius:8px;display:none"></div>
-      </div>
-    </div>
-    <p class="hint">※ 仕入先（PDFをくれた会社）とは別に、見積の宛先＝得意先をここで指定します。選ぶと得意先コード・名・TEL・FAX・担当者が入ります。</p>
     <div id="draftBox" hidden style="margin-top:12px;border-top:1px solid var(--line);padding-top:12px">
       <p class="hint" style="margin:0 0 8px"><b>続きから</b>（作成途中の見積。クリックで再開。エクスポートすると消えます）</p>
       <div id="draftList" style="display:flex;flex-direction:column;gap:6px"></div>
@@ -917,8 +909,7 @@ function pickTokui(code){
 function bindTokuiSearch(qid,bid){ const qEl=$(qid), bEl=$(bid); if(!qEl||!bEl)return;
   qEl.addEventListener('input',()=>renderTokuiBox(qEl,bEl));
   bEl.addEventListener('click',e=>{ const r=e.target.closest('[data-tc]'); if(r){ pickTokui(r.dataset.tc); qEl.value=''; bEl.style.display='none'; } }); }
-bindTokuiSearch('tokuiQuery','tokuiResults');    // ②ヘッダ側
-bindTokuiSearch('tokuiQuery1','tokuiResults1');  // ①PDF読込側（得意先 宛先）
+bindTokuiSearch('tokuiQuery','tokuiResults');    // ②ヘッダ側（得意先 名寄せ）
 
 // 得意先コード/名を「検索できるプルダウン（datalist）」化＋双方向オートフィル
 function populateTokuiLists(){
