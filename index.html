@@ -252,7 +252,7 @@
     <div id="tokuiResults" style="margin:0 0 10px;max-height:220px;overflow:auto;border:1px solid var(--line);border-radius:8px;display:none"></div>
     <div class="row">
       <div class="f"><label>見積番号（自動採番）</label><input class="s" id="hNo" value="" placeholder="エクスポート時に自動" readonly></div>
-      <div class="f"><label>見積日(YYMMDD/令和)</label><input class="s" id="hDate" value="081020"></div>
+      <div class="f"><label>見積日（自動・今日）</label><input class="s" id="hDate" value="" readonly title="作成日（今日）が自動で入ります"></div>
       <div class="f"><label>得意先コード（検索プルダウン）</label><input class="s" id="hTokui" value="" list="tokuiCodeList" autocomplete="off"><datalist id="tokuiCodeList"></datalist></div>
       <div class="f"><label>得意先名（検索プルダウン）</label><input class="m" id="hTokuiName" value="" list="tokuiNameList" autocomplete="off"><datalist id="tokuiNameList"></datalist></div>
       <div class="f"><label>担当者コード</label><select id="hTanto" style="min-width:150px"></select></div>
@@ -724,6 +724,9 @@ function persistDrafts(){ try{ localStorage.setItem(DRAFTS_KEY,JSON.stringify(DR
 const HKEYS=['hNo','hDate','hTokui','hTokuiName','hTanto','hTel','hFax','hSupplier','hKenmei','hNohin','hShiharai','hYuko'];
 function headerVals(){ const o={}; HKEYS.forEach(k=>{ const e=$(k); if(e)o[k]=e.value; }); return o; }
 function newId(){ return 'd'+Date.now()+Math.random().toString(36).slice(2,5); }
+// 見積日：常に今日（令和YYMMDD）。例 2026/10/30 → 081030
+function todayReiwa(){ const d=new Date(); const y=('0'+(d.getFullYear()-2018)).slice(-2); const m=('0'+(d.getMonth()+1)).slice(-2); const dd=('0'+d.getDate()).slice(-2); return y+m+dd; }
+function setToday(){ const e=$('hDate'); if(e)e.value=todayReiwa(); }
 function saveDraft(){
   clearTimeout(saveTimer);
   saveTimer=setTimeout(()=>{
@@ -751,10 +754,11 @@ function openDraft(id){
   const d=DRAFTS.find(x=>x.id===id); if(!d)return;
   curDraftId=d.id; curDraftName=d.name; curSupplier=d.supplier||''; LINES=d.lines;
   HKEYS.forEach(k=>{ if($(k)&&d.header&&d.header[k]!=null)$(k).value=d.header[k]; });
+  setToday();   // 見積日は保存値ではなく常に今日
   render(); showStep(2); toast(`「${d.name}」を再開`);
 }
 function removeDraft(id){ DRAFTS=DRAFTS.filter(d=>d.id!==id); persistDrafts(); renderDraftList(); }
-function newDraft(){ curDraftId=null; curDraftName=''; LINES=[]; render(); renderDraftList(); toast('新規作成'); }
+function newDraft(){ curDraftId=null; curDraftName=''; LINES=[]; if($('hNo'))$('hNo').value=''; setToday(); render(); renderDraftList(); toast('新規作成'); }
 // エクスポート完了時：現在の見積を一覧から消す
 function finishDraft(){ if(curDraftId){ removeDraft(curDraftId); curDraftId=null; curDraftName=''; } }
 function bindDrafts(){
@@ -925,6 +929,11 @@ function fillFromName(){ const n=($('hTokuiName').value||'').trim(); const t=ALL
   if($('hTanto')&&t.tanto&&!$('hTanto').value)$('hTanto').value=t.tanto; updateTokuiTag(); saveDraft(); }
 if($('hTokui')){ $('hTokui').addEventListener('change',fillFromCode); $('hTokui').addEventListener('input',fillFromCode); }
 if($('hTokuiName')){ $('hTokuiName').addEventListener('change',fillFromName); $('hTokuiName').addEventListener('input',fillFromName); }
+// 選択後もプルダウンで他候補を出せるよう、フォーカス時は一旦クリア（選ばなければ元に戻す）
+function comboReopen(el){ if(!el)return;
+  el.addEventListener('focus',()=>{ el.dataset.prev=el.value; el.value=''; });
+  el.addEventListener('blur',()=>{ if(!el.value && el.dataset.prev){ el.value=el.dataset.prev; } }); }
+comboReopen($('hTokui')); comboReopen($('hTokuiName'));
 
 // 常宏サンプル
 const SAMPLE=[
@@ -950,7 +959,7 @@ function loadLines(arr){
   applyProfileToLines();
   render(true); resolveAll();
 }
-$('loadSample').addEventListener('click',()=>{ curDraftId=null; curDraftName='常宏サンプル'; loadLines(SAMPLE); });
+$('loadSample').addEventListener('click',()=>{ curDraftId=null; curDraftName='常宏サンプル'; if($('hNo'))$('hNo').value=''; loadLines(SAMPLE); });
 
 // PDF読込（列バンド＋行クラスタ方式。この仕入先テンプレート向け）
 pdfjsLib.GlobalWorkerOptions.workerSrc='https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
@@ -981,6 +990,7 @@ $('pdfIn').addEventListener('change',async e=>{
     if(!parsed.some(r=>r[0]==='item')){ parsed=[]; PAGES.forEach(w=>{parsed=parsed.concat(parseGeneric(w));}); generic=true; mode='汎用'; }
     if(parsed.some(r=>r[0]==='item')){
       curDraftId=null; curDraftName=(file.name||'見積').replace(/\.pdf$/i,'');  // PDF名で新しい続きを作る
+      if($('hNo'))$('hNo').value='';   // 新しい見積＝番号リセット（次のエクスポートで新採番）
       curSupplier=fmt?fmt.name:'';   // 学習の紐付け先（判別できた仕入先）
       if(fmt&&$('hSupplier')&&!$('hSupplier').value) $('hSupplier').value=fmt.name;  // 仕入先名を自動セット
       loadLines(parsed);
@@ -1223,16 +1233,20 @@ function toSjisBlob(text){
   return new Blob([text],{type:'text/plain'}); // 変換不可時はUTF-8で退避
 }
 $('dlCsv').addEventListener('click',async()=>{ if(!LINES.length){toast('明細がありません');return;}
+  setToday();   // 見積日は常に当日
   if(!($('hTokui').value||'').trim()){ toast('得意先コードが空です。②で得意先を検索して選んでください'); $('hTokui').focus(); const el=$('hTokui'); if(el){el.style.outline='2px solid #d33';setTimeout(()=>el.style.outline='',2500);} return; }
   // 見積番号を採番（スプレッドシート共有カウンタ。全PCで連番・重複なし）
-  if(!GAS_URL){ toast('スプレッドシート未接続のため採番できません'); return; }
-  toast('見積番号を採番中…',true);
-  try{
-    const r=await fetch(GAS_URL,{method:'POST',headers:{'Content-Type':'text/plain;charset=utf-8'},body:JSON.stringify({action:'nextQuote'})});
-    const j=await r.json();
-    if(!j||!j.ok||!j.no) throw new Error((j&&j.error)||'採番に失敗');
-    $('hNo').value=j.no;
-  }catch(err){ toastDone('見積番号の採番に失敗（通信エラー）。Code.gsを「新しいバージョン」で再デプロイしてください'); return; }
+  // 未設定のときだけ採番。設定済み（同じ見積の再エクスポート）は同じ番号を再利用
+  if(!($('hNo').value||'').trim()){
+    if(!GAS_URL){ toast('スプレッドシート未接続のため採番できません'); return; }
+    toast('見積番号を採番中…',true);
+    try{
+      const r=await fetch(GAS_URL,{method:'POST',headers:{'Content-Type':'text/plain;charset=utf-8'},body:JSON.stringify({action:'nextQuote'})});
+      const j=await r.json();
+      if(!j||!j.ok||!j.no) throw new Error((j&&j.error)||'採番に失敗');
+      $('hNo').value=j.no; saveDraft();   // 見積に番号を保持（再エクスポートで再利用）
+    }catch(err){ toastDone('見積番号の採番に失敗（通信エラー）。Code.gsを「新しいバージョン」で再デプロイしてください'); return; }
+  }
   const t=buildCsv(); $('csvOut').textContent=t;   // プレビューも更新
   const blob=toSjisBlob(t); const a=document.createElement('a');
   a.href=URL.createObjectURL(blob); a.download=`yayoi_mitsumori_${$('hNo').value||'out'}.txt`; a.click(); setTimeout(()=>URL.revokeObjectURL(a.href),1000);
@@ -1490,7 +1504,7 @@ fillTantoSelect();            // 担当者コードのプルダウン
 syncTantoFromProfile();       // この端末の担当者に合わせて担当者コードを初期反映
 // 作業中データ（続きから）
 HKEYS.forEach(k=>{ const e=$(k); if(e)e.addEventListener('input',saveDraft); });
-loadDrafts(); bindDrafts(); renderDraftList();
+loadDrafts(); bindDrafts(); renderDraftList(); setToday();
 LINES=[]; render();   // 起動時は空。続き一覧から選ぶかPDFを読み込む
 showStep(1);
 loadProfilesGAS();   // GASに共有プリセットがあれば上書き
