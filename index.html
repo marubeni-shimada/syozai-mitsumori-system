@@ -998,6 +998,13 @@ async function parsePdfFile(file){
   if(!parsed.some(r=>r[0]==='item')){ parsed=[]; PAGES.forEach(w=>{parsed=parsed.concat(parseGeneric(w));}); generic=true; mode='汎用'; }
   return {parsed,fmt,mode,generic,supplier:fmt?fmt.name:''};
 }
+// 仕入先名を確定（自動判別できなければ会社名を入力。空ならファイル名）
+function askSupplier(detected,file){
+  if(detected) return detected;
+  const base=((file&&file.name)||'').replace(/\.pdf$/i,'');
+  const v=prompt('この仕入先（会社名）を入力してください',base);
+  return (v&&v.trim())||base||'仕入先';
+}
 // 新規読込（複数ファイル可。1枚目＝入れ替え、2枚目以降＝追記＝複数仕入先を1見積に）
 $('pdfIn').addEventListener('change',async e=>{
   const files=Array.from(e.target.files||[]); if(!files.length)return; toast('PDF解析中…',true);
@@ -1006,15 +1013,16 @@ $('pdfIn').addEventListener('change',async e=>{
     let res; try{ res=await parsePdfFile(file); }catch(err){ console.error(err); continue; }
     const {parsed,fmt,supplier}=res;
     if(!parsed.some(r=>r[0]==='item')) continue;
+    const sup=askSupplier(supplier,file);   // 自動判別できなければ会社名を入力
     if(!replaced){
       curDraftId=null; curDraftName=(file.name||'見積').replace(/\.pdf$/i,'');  // PDF名で新しい続きを作る
       if($('hNo'))$('hNo').value='';   // 新しい見積＝番号リセット
-      curSupplier=supplier;
-      if(fmt&&$('hSupplier')&&!$('hSupplier').value) $('hSupplier').value=fmt.name;
-      loadLines(parsed,{supplier,defer:true}); replaced=true;
+      curSupplier=sup;
+      if($('hSupplier')&&!$('hSupplier').value) $('hSupplier').value=sup;
+      loadLines(parsed,{supplier:sup,defer:true}); replaced=true;
     } else {
-      curSupplier=supplier||curSupplier;
-      loadLines(parsed,{supplier,append:true,defer:true});
+      curSupplier=sup;
+      loadLines(parsed,{supplier:sup,append:true,defer:true});
     }
     total+=parsed.filter(r=>r[0]==='item').length; nfile++;
   }
@@ -1032,8 +1040,9 @@ $('pdfAddIn').addEventListener('change',async e=>{
     let res; try{ res=await parsePdfFile(file); }catch(err){ console.error(err); continue; }
     const {parsed,supplier}=res;
     if(!parsed.some(r=>r[0]==='item')) continue;
-    curSupplier=supplier||curSupplier;
-    loadLines(parsed,{supplier,append:true,defer:true});   // 得意先・見積番号・見積日はそのまま、明細だけ追記
+    const sup=askSupplier(supplier,file);   // 自動判別できなければ会社名を入力
+    curSupplier=sup;
+    loadLines(parsed,{supplier:sup,append:true,defer:true});   // 得意先・見積番号・見積日はそのまま、明細だけ追記
     total+=parsed.filter(r=>r[0]==='item').length; nfile++;
   }
   if(total) resolveAll();   // 追加後にまとめて名寄せ
