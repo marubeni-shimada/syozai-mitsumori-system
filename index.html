@@ -923,8 +923,8 @@ function fillFromCode(){ const c=($('hTokui').value||'').trim(); const t=ALLTOKU
 function fillFromName(){ const n=($('hTokuiName').value||'').trim(); const t=ALLTOKUI.find(x=>x.name===n); if(!t)return;
   $('hTokui').value=t.code; if($('hTel'))$('hTel').value=t.tel||''; if($('hFax'))$('hFax').value=t.fax||'';
   if($('hTanto')&&t.tanto&&!$('hTanto').value)$('hTanto').value=t.tanto; updateTokuiTag(); saveDraft(); }
-if($('hTokui')) $('hTokui').addEventListener('change',fillFromCode);
-if($('hTokuiName')) $('hTokuiName').addEventListener('change',fillFromName);
+if($('hTokui')){ $('hTokui').addEventListener('change',fillFromCode); $('hTokui').addEventListener('input',fillFromCode); }
+if($('hTokuiName')){ $('hTokuiName').addEventListener('change',fillFromName); $('hTokuiName').addEventListener('input',fillFromName); }
 
 // 常宏サンプル
 const SAMPLE=[
