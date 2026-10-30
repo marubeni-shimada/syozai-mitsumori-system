@@ -671,7 +671,16 @@ function recalcMatch(l){ if(l.kind!=='item'){return;} const r=matchTop(l.name,l.
 function render(animate){
   const tb=$('rows'); tb.innerHTML='';
   let tc=0,ts=0,ni=0,nm=0,newList=[];
+  const itemSups=[...new Set(LINES.filter(x=>x.kind==='item').map(x=>x.supplier||''))];
+  const multiSup=itemSups.length>1; let shownSup=null;
   LINES.forEach((l,i)=>{
+    // 複数仕入先のときは、仕入先が変わる所に区切り見出しを入れる
+    if(l.kind==='item' && multiSup && (l.supplier||'')!==shownSup){
+      shownSup=l.supplier||'';
+      const hr=document.createElement('tr'); hr.className='supdiv';
+      hr.innerHTML=`<td colspan="10" style="background:var(--chip,#eef2ff);color:var(--accent);font-weight:700;padding:6px 10px;border-top:2px solid var(--accent)">▼ ${esc(shownSup||'（仕入先未設定）')}</td>`;
+      tb.appendChild(hr);
+    }
     const tr=document.createElement('tr');
     if(animate){ tr.classList.add('enter'); tr.style.animationDelay=(i*0.035)+'s'; }
     if(l.kind==='sec'){ tr.className='sec';
