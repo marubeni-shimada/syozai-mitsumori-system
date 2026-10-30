@@ -195,6 +195,7 @@
     <h2>① 見積を読み込む</h2>
     <div class="row">
       <span class="filebtn"><button type="button">PDFを読み込む</button><input type="file" id="pdfIn" accept="application/pdf"></span>
+      <span class="filebtn"><button type="button">＋PDFを追加（別の仕入先）</button><input type="file" id="pdfAddIn" accept="application/pdf"></span>
       <button type="button" class="ghost" id="loadSample">サンプルを読込</button>
       <button type="button" class="ghost" id="addRow">＋ 明細行を追加</button>
       <button type="button" class="ghost" id="clearDraft">新規（クリア）</button>
@@ -493,8 +494,8 @@ async function gasMatch(items){
   const j=await r.json(); if(!j||!j.ok)throw new Error('gas'); return j;
 }
 function applyResult(l,r){ l.cand=r.cand||[]; l.verdict=r.verdict||'new'; l.code=(l.verdict==='new')?'':(l.cand[0]?l.cand[0].code:'');
-  // 学習済み（仕入先＋品名）があれば最優先で確定
-  const lc=learnedCode(curSupplier,l.name);
+  // 学習済み（仕入先＋品名）があれば最優先で確定（明細ごとの仕入先で照合）
+  const lc=learnedCode(l.supplier||curSupplier,l.name);
   if(lc){ l.code=lc; l.verdict='learned';
     if(!l.cand.some(c=>c.code===lc)){ l.cand.unshift({code:lc,name:'(学習済み)',unit:l.unit,s:99}); } }
 }
@@ -947,10 +948,13 @@ const SAMPLE=[
  ['item','グレーチング 四方枠 みぞ幅100用 枠外200*2445','台',1,28000],
  ['cond','（見積条件）※スチールアングルのL45*45はないのでL50*50で見積しています','',0,0],
 ];
-function loadLines(arr){
-  LINES=arr.map(([kind,name,unit,qty,cost])=>{
-    const l={kind:kind==='item'?'item':'sec',name,qty:qty||0,unit:unit||'',cost:cost||0,margin:0,roundUnit:10,roundMode:'round',code:'',cand:[],verdict:'new'};
+function loadLines(arr,opts){
+  opts=opts||{};
+  const sup=('supplier' in opts)?(opts.supplier||''):curSupplier;
+  const mapped=arr.map(([kind,name,unit,qty,cost])=>{
+    const l={kind:kind==='item'?'item':'sec',name,qty:qty||0,unit:unit||'',cost:cost||0,margin:0,roundUnit:10,roundMode:'round',code:'',cand:[],verdict:'new',supplier:sup,memo:''};
     if(l.kind==='item')recalcMatch(l); return l;});
+  LINES = opts.append ? LINES.concat(mapped) : mapped;
   applyProfileToLines();
   render(true); resolveAll();
 }
@@ -960,38 +964,58 @@ $('loadSample').addEventListener('click',()=>{ curDraftId=null; curDraftName='�
 pdfjsLib.GlobalWorkerOptions.workerSrc='https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
 // 日本語（CJK）の表示・抽出に必要なCMap/標準フォント
 const PDF_OPTS={cMapUrl:'https://cdn.jsdelivr.net/npm/pdfjs-dist@3.11.174/cmaps/',cMapPacked:true,standardFontDataUrl:'https://cdn.jsdelivr.net/npm/pdfjs-dist@3.11.174/standard_fonts/'};
+// PDFを解析して {parsed, fmt, mode, generic, supplier} を返す（読込・追加読込で共用）
+async function parsePdfFile(file){
+  const buf=await file.arrayBuffer(); const pdf=await pdfjsLib.getDocument({data:buf,...PDF_OPTS}).promise;
+  const PAGES=[];
+  for(let p=1;p<=pdf.numPages;p++){
+    const page=await pdf.getPage(p); const vp=page.getViewport({scale:1});
+    const tc=await page.getTextContent();
+    const words=tc.items.filter(it=>it.str.trim()).map(it=>({
+      x0:it.transform[4], top:vp.height-it.transform[5], text:it.str.trim() }));
+    PAGES.push(words);
+  }
+  const fsel=$('readFormat');
+  let fmt=fsel&&fsel.value!==''?FORMATS[+fsel.value]:matchFormat(PAGES[0]);
+  let mode='', parsed=[];
+  const run=cols=>{ let a=[]; PAGES.forEach(w=>{a=a.concat(parsePage(w,cols));}); return a; };
+  if(fmt){ parsed=run(fmt.cols); mode=fmt.name+'（自動判別）'; }
+  else{ parsed=run(null); mode='既定様式';
+    if(!parsed.some(r=>r[0]==='item')){ const c=detectCols(PAGES[0]); if(c){ parsed=run(c); mode='自動推測'; } } }
+  let generic=false;
+  if(!parsed.some(r=>r[0]==='item')){ parsed=[]; PAGES.forEach(w=>{parsed=parsed.concat(parseGeneric(w));}); generic=true; mode='汎用'; }
+  return {parsed,fmt,mode,generic,supplier:fmt?fmt.name:''};
+}
+// 新規読込（入れ替え）
 $('pdfIn').addEventListener('change',async e=>{
   const file=e.target.files[0]; if(!file)return; toast('PDF解析中…',true);
   try{
-    const buf=await file.arrayBuffer(); const pdf=await pdfjsLib.getDocument({data:buf,...PDF_OPTS}).promise;
-    let parsed=[]; const PAGES=[];
-    for(let p=1;p<=pdf.numPages;p++){
-      const page=await pdf.getPage(p); const vp=page.getViewport({scale:1});
-      const tc=await page.getTextContent();
-      // pdf.jsは左下原点 → top(上からの距離)に変換してpdfplumberと揃える
-      const words=tc.items.filter(it=>it.str.trim()).map(it=>({
-        x0:it.transform[4], top:vp.height-it.transform[5], text:it.str.trim() }));
-      PAGES.push(words);
-    }
-    // 手動選択があればそれ。無ければ①電話番号で会社を自動判別→②自動推測→③汎用
-    const fsel=$('readFormat');
-    let fmt=fsel&&fsel.value!==''?FORMATS[+fsel.value]:matchFormat(PAGES[0]);
-    let mode='';
-    const run=cols=>{ let a=[]; PAGES.forEach(w=>{a=a.concat(parsePage(w,cols));}); return a; };
-    if(fmt){ parsed=run(fmt.cols); mode=fmt.name+'（自動判別）'; }
-    else{ parsed=run(null); mode='既定様式';
-      if(!parsed.some(r=>r[0]==='item')){ const c=detectCols(PAGES[0]); if(c){ parsed=run(c); mode='自動推測'; } } }
-    let generic=false;
-    if(!parsed.some(r=>r[0]==='item')){ parsed=[]; PAGES.forEach(w=>{parsed=parsed.concat(parseGeneric(w));}); generic=true; mode='汎用'; }
+    const {parsed,fmt,mode,generic,supplier}=await parsePdfFile(file);
     if(parsed.some(r=>r[0]==='item')){
       curDraftId=null; curDraftName=(file.name||'見積').replace(/\.pdf$/i,'');  // PDF名で新しい続きを作る
       if($('hNo'))$('hNo').value='';   // 新しい見積＝番号リセット（次のエクスポートで新採番）
-      curSupplier=fmt?fmt.name:'';   // 学習の紐付け先（判別できた仕入先）
+      curSupplier=supplier;   // 学習の紐付け先（判別できた仕入先）
       if(fmt&&$('hSupplier')&&!$('hSupplier').value) $('hSupplier').value=fmt.name;  // 仕入先名を自動セット
-      loadLines(parsed);
+      loadLines(parsed,{supplier});
       const n=parsed.filter(r=>r[0]==='item').length;
       toastDone(generic?`明細 ${n} 件を自動抽出（要確認）`:`明細 ${n} 件を読込（${mode}）`); }
     else toastDone('明細を自動抽出できませんでした。手入力で。');
+  }catch(err){ toastDone('PDF解析に失敗しました'); console.error(err); }
+  e.target.value='';
+});
+// 追加読込（今の見積に足す。複数仕入先を1見積にまとめる）
+$('pdfAddIn').addEventListener('change',async e=>{
+  const file=e.target.files[0]; if(!file)return;
+  if(!LINES.length){ toast('先に1件目のPDFを読み込んでください'); e.target.value=''; return; }
+  toast('PDFを追加解析中…',true);
+  try{
+    const {parsed,mode,generic,supplier}=await parsePdfFile(file);
+    if(parsed.some(r=>r[0]==='item')){
+      curSupplier=supplier||curSupplier;
+      loadLines(parsed,{supplier,append:true});   // 得意先・見積番号・見積日はそのまま、明細だけ追記
+      const n=parsed.filter(r=>r[0]==='item').length;
+      toastDone(`追加：明細 ${n} 件（${supplier||mode}）`); }
+    else toastDone('明細を自動抽出できませんでした。');
   }catch(err){ toastDone('PDF解析に失敗しました'); console.error(err); }
   e.target.value='';
 });
@@ -1097,15 +1121,16 @@ async function loadLearnedGAS(){
 function learnedCode(supplier,name){
   const m=LEARNED[supplier]; if(!m)return null; return m[NFKC(name)]||null;
 }
-// 確定した明細（仕入先＋品名→コード）をGASに覚えさせる
+// 確定した明細（仕入先＋品名→コード）をGASに覚えさせる（複数仕入先に対応・明細ごとの仕入先で学習）
 async function learnCurrent(){
-  if(!GAS_URL||!curSupplier)return;
-  const items=LINES.filter(l=>l.kind==='item'&&l.code).map(l=>({name:l.name,code:l.code}));
-  if(!items.length)return;
-  // ローカルにも即反映
-  if(!LEARNED[curSupplier])LEARNED[curSupplier]={};
-  items.forEach(it=>{ LEARNED[curSupplier][NFKC(it.name)]=String(it.code); });
-  try{ await fetch(GAS_URL,{method:'POST',headers:{'Content-Type':'text/plain;charset=utf-8'},body:JSON.stringify({action:'learn',supplier:curSupplier,items})}); }catch(_){}
+  if(!GAS_URL)return;
+  const bySup={};
+  LINES.filter(l=>l.kind==='item'&&l.code).forEach(l=>{ const s=l.supplier||curSupplier; if(!s)return; (bySup[s]=bySup[s]||[]).push({name:l.name,code:String(l.code)}); });
+  for(const s in bySup){
+    if(!LEARNED[s])LEARNED[s]={};
+    bySup[s].forEach(it=>{ LEARNED[s][NFKC(it.name)]=String(it.code); });   // ローカルにも即反映
+    try{ await fetch(GAS_URL,{method:'POST',headers:{'Content-Type':'text/plain;charset=utf-8'},body:JSON.stringify({action:'learn',supplier:s,items:bySup[s]})}); }catch(_){}
+  }
 }
 
 // 汎用解析（列位置に頼らず「単位＋数字」の並びで拾う。未知の書式向け）
@@ -1162,15 +1187,25 @@ function buildCsv(){
     return r; };
   const zeros=r=>{ r[18]='0';r[20]='0';r[21]='0';['23','24','25','27','28','29'].forEach(c=>r[+c]='0');r[31]='0';r[32]='0'; };
   const push=r=>{ ln++; r[13]=String(ln); rows.push(r.map(v=>`"${String(v).replace(/"/g,'""')}"`).join(',')); };
-  // 種別6：得意先ヘッダ（見出しに仕入先名）
-  { const r=base(); r[14]='6'; r[17]=H.supplier; zeros(r); push(r); }
-  // 本体
-  LINES.forEach(l=>{ const r=base();
-    if(l.kind==='item'){ const sell=lineSell(l), amt=sell*l.qty, camt=l.cost*l.qty;
+  // 本体：仕入先が切り替わるたびに種別6（会社名の見出し）を入れる＝複数仕入先を1見積に
+  let curSup=null, first=true;
+  LINES.forEach(l=>{
+    if(l.kind==='item'){
+      const sup=(l.supplier||H.supplier||'');
+      if(sup!==curSup){
+        if(!first){ const s=base(); s[14]='5'; s[17]=''; zeros(s); push(s); }   // ブロック間の空行区切り
+        const h=base(); h[14]='6'; h[17]=sup; zeros(h); push(h);                 // 会社名見出し（印刷されない／伝票に表示）
+        curSup=sup; first=false;
+      }
+      const r=base(); const sell=lineSell(l), amt=sell*l.qty, camt=l.cost*l.qty;
       r[14]='1';r[15]=l.code||'';r[17]=l.name;r[18]='13';r[19]=l.unit;r[20]='0';r[21]='0';r[22]='0000';
-      r[23]=String(l.qty);r[24]=String(sell);r[25]=String(amt);r[27]=String(amt);r[28]=String(camt);r[29]=String(l.cost);r[31]='2';r[32]='2'; }
-    else{ r[14]='5';r[17]=l.name;zeros(r); }   // 摘要・注記行＝種別5
-    push(r); });
+      r[23]=String(l.qty);r[24]=String(sell);r[25]=String(amt);r[27]=String(amt);r[28]=String(camt);r[29]=String(l.cost);r[31]='2';r[32]='2';
+      if(l.memo)r[30]=l.memo;
+      push(r);
+    } else {
+      const r=base(); r[14]='5'; r[17]=l.name; zeros(r); push(r);   // 摘要・注記行＝種別5
+    }
+  });
   // フッタ（値がある項目だけ）：件名20／納入場所22／支払条件23／有効期限24
   [['20',H.kenmei],['22',H.nohin],['23',H.shiharai],['24',H.yuko]].forEach(([t,v])=>{ if(v){ const r=base(); r[14]=t; r[17]=v; zeros(r); push(r); } });
   return rows.join('\r\n')+'\r\n';
