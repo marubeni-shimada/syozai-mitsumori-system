@@ -201,6 +201,14 @@
       <div class="f"><label>書式（通常は自動判別）</label><select id="readFormat" style="min-width:150px"><option value="">自動判別</option></select></div>
     </div>
     <p class="hint">PDFを読み込むと仕入先を自動で判別して解析します（登録済みの会社は電話番号で識別）。うまくいかない時だけ、右の「書式」で会社を手動指定してください。読み込んだ明細は表で直接直せます。</p>
+    <div class="row" style="margin-top:10px">
+      <div class="f" style="flex:1;min-width:260px">
+        <label>得意先（宛先）を名寄せ検索 <span id="curTokuiTag" class="hint" style="margin-left:8px;color:var(--accent)"></span></label>
+        <input id="tokuiQuery1" placeholder="社名をざっくり（㈱・スペース不要）例：あすか工業" autocomplete="off">
+        <div id="tokuiResults1" style="margin:4px 0 0;max-height:220px;overflow:auto;border:1px solid var(--line);border-radius:8px;display:none"></div>
+      </div>
+    </div>
+    <p class="hint">※ 仕入先（PDFをくれた会社）とは別に、見積の宛先＝得意先をここで指定します。選ぶと得意先コード・名・TEL・FAX・担当者が入ります。</p>
     <div id="draftBox" hidden style="margin-top:12px;border-top:1px solid var(--line);padding-top:12px">
       <p class="hint" style="margin:0 0 8px"><b>続きから</b>（作成途中の見積。クリックで再開。エクスポートすると消えます）</p>
       <div id="draftList" style="display:flex;flex-direction:column;gap:6px"></div>
@@ -251,10 +259,10 @@
     </div>
     <div id="tokuiResults" style="margin:0 0 10px;max-height:220px;overflow:auto;border:1px solid var(--line);border-radius:8px;display:none"></div>
     <div class="row">
-      <div class="f"><label>見積番号</label><input class="s" id="hNo" value="00090001"></div>
+      <div class="f"><label>見積番号（自動採番）</label><input class="s" id="hNo" value="" placeholder="エクスポート時に自動" readonly></div>
       <div class="f"><label>見積日(YYMMDD/令和)</label><input class="s" id="hDate" value="081020"></div>
-      <div class="f"><label>得意先コード</label><input class="s" id="hTokui" value=""></div>
-      <div class="f"><label>得意先名</label><input class="m" id="hTokuiName" value=""></div>
+      <div class="f"><label>得意先コード（検索プルダウン）</label><input class="s" id="hTokui" value="" list="tokuiCodeList" autocomplete="off"><datalist id="tokuiCodeList"></datalist></div>
+      <div class="f"><label>得意先名（検索プルダウン）</label><input class="m" id="hTokuiName" value="" list="tokuiNameList" autocomplete="off"><datalist id="tokuiNameList"></datalist></div>
       <div class="f"><label>担当者コード</label><select id="hTanto" style="min-width:150px"></select></div>
     </div>
     <div class="row" style="margin-top:10px">
@@ -869,27 +877,63 @@ async function loadAllTokui(){
     } }catch(_){}
   }
 }
-function searchTokui(q,k=20){ q=(q||'').trim(); if(!q)return [];
-  const ts=q.split(/\s+/).filter(Boolean);
-  return ALLTOKUI.filter(t=>{ const hay=t.code+' '+t.name+' '+(t.kana||''); return ts.every(x=>hay.includes(x)); }).slice(0,k); }
-function renderTokuiResults(){
-  const box=$('tokuiResults'), q=$('tokuiQuery').value, list=searchTokui(q,20);
-  if(!q){ box.style.display='none'; return; }
-  box.style.display='block';
-  box.innerHTML = list.length
+// 得意先の名寄せ：㈱・全半角・スペース・「株式会社」等を無視して照合
+function tkNorm(s){ s=(s||'').normalize('NFKC');
+  ['株式会社','有限会社','合同会社','合資会社','(株)','(有)','（株）','（有）','(資)','(名)'].forEach(w=>{ s=s.split(w).join(''); });
+  return s.replace(/[\s　・,.，．\-ｰ()（）]/g,'').toLowerCase(); }
+function tkScore(qn,code,nn,kn){ let sc;
+  if(nn===qn||kn===qn) sc=1000;
+  else if(nn.startsWith(qn)||qn.startsWith(nn)) sc=600;
+  else if(nn.indexOf(qn)>=0) sc=400;
+  else if(kn&&kn.indexOf(qn)>=0) sc=350;
+  else if(qn.indexOf(nn)>=0) sc=300;
+  else return -1;
+  sc-=Math.abs(nn.length-qn.length)*3;           // 長さが近いほど上位（社名＞現場名）
+  if(/^[0-9]+$/.test(code)) sc+=40;              // 数字コード（正式得意先）を優先
+  return sc; }
+function searchTokui(q,k=20){ const qn=tkNorm(q); if(!qn)return [];
+  const out=[];
+  for(const t of ALLTOKUI){ const s=tkScore(qn,t.code,tkNorm(t.name),tkNorm(t.kana||'')); if(s>=0) out.push({t,s}); }
+  out.sort((a,b)=>b.s-a.s);
+  return out.slice(0,k).map(x=>x.t); }
+function renderTokuiBox(qEl,boxEl){
+  const q=qEl.value, list=searchTokui(q,20);
+  if(!q){ boxEl.style.display='none'; return; }
+  boxEl.style.display='block';
+  boxEl.innerHTML = list.length
     ? list.map(t=>`<div class="msrow" data-tc="${esc(t.code)}" style="padding:6px 8px;border-bottom:1px solid var(--line);cursor:pointer;display:flex;gap:8px;align-items:center"><span class="mono" style="color:var(--accent);min-width:46px;font-weight:700">${esc(t.code)}</span><span style="flex:1">${esc(t.name)}</span><span class="hint" style="white-space:nowrap">${esc(t.tanto||'')}</span></div>`).join('')
     : '<p class="hint" style="padding:6px 8px;margin:0">該当なし</p>';
 }
+function updateTokuiTag(){ const c=($('hTokui')?$('hTokui').value:''), n=($('hTokuiName')?$('hTokuiName').value:'');
+  const el=$('curTokuiTag'); if(el) el.textContent = c?`選択中：${c}｜${n}`:''; }
 function pickTokui(code){
   const t=ALLTOKUI.find(x=>x.code===code); if(!t)return;
   $('hTokui').value=t.code; $('hTokuiName').value=t.name;
   if($('hTel'))$('hTel').value=t.tel||''; if($('hFax'))$('hFax').value=t.fax||'';
   if($('hTanto')&&t.tanto&&!$('hTanto').value) $('hTanto').value=t.tanto;   // 担当者が未選択なら得意先の既定担当者
-  $('tokuiQuery').value=''; $('tokuiResults').style.display='none'; saveDraft();
+  updateTokuiTag(); saveDraft();
   toast(`${t.code}｜${t.name} を設定しました`);
 }
-if($('tokuiQuery')){ $('tokuiQuery').addEventListener('input',renderTokuiResults);
-  $('tokuiResults').addEventListener('click',e=>{ const r=e.target.closest('[data-tc]'); if(r)pickTokui(r.dataset.tc); }); }
+function bindTokuiSearch(qid,bid){ const qEl=$(qid), bEl=$(bid); if(!qEl||!bEl)return;
+  qEl.addEventListener('input',()=>renderTokuiBox(qEl,bEl));
+  bEl.addEventListener('click',e=>{ const r=e.target.closest('[data-tc]'); if(r){ pickTokui(r.dataset.tc); qEl.value=''; bEl.style.display='none'; } }); }
+bindTokuiSearch('tokuiQuery','tokuiResults');    // ②ヘッダ側
+bindTokuiSearch('tokuiQuery1','tokuiResults1');  // ①PDF読込側（得意先 宛先）
+
+// 得意先コード/名を「検索できるプルダウン（datalist）」化＋双方向オートフィル
+function populateTokuiLists(){
+  const cl=$('tokuiCodeList'), nl=$('tokuiNameList'); if(!cl||!nl||!ALLTOKUI.length)return;
+  cl.innerHTML=ALLTOKUI.map(t=>`<option value="${esc(t.code)}">${esc(t.name)}</option>`).join('');
+  nl.innerHTML=ALLTOKUI.map(t=>`<option value="${esc(t.name)}">${esc(t.code)}</option>`).join('');
+}
+function fillFromCode(){ const c=($('hTokui').value||'').trim(); const t=ALLTOKUI.find(x=>x.code===c); if(!t)return;
+  $('hTokuiName').value=t.name; if($('hTel'))$('hTel').value=t.tel||''; if($('hFax'))$('hFax').value=t.fax||'';
+  if($('hTanto')&&t.tanto&&!$('hTanto').value)$('hTanto').value=t.tanto; updateTokuiTag(); saveDraft(); }
+function fillFromName(){ const n=($('hTokuiName').value||'').trim(); const t=ALLTOKUI.find(x=>x.name===n); if(!t)return;
+  $('hTokui').value=t.code; if($('hTel'))$('hTel').value=t.tel||''; if($('hFax'))$('hFax').value=t.fax||'';
+  if($('hTanto')&&t.tanto&&!$('hTanto').value)$('hTanto').value=t.tanto; updateTokuiTag(); saveDraft(); }
+if($('hTokui')) $('hTokui').addEventListener('change',fillFromCode);
+if($('hTokuiName')) $('hTokuiName').addEventListener('change',fillFromName);
 
 // 常宏サンプル
 const SAMPLE=[
@@ -1187,7 +1231,17 @@ function toSjisBlob(text){
   }catch(_){}
   return new Blob([text],{type:'text/plain'}); // 変換不可時はUTF-8で退避
 }
-$('dlCsv').addEventListener('click',()=>{ if(!LINES.length){toast('明細がありません');return;}
+$('dlCsv').addEventListener('click',async()=>{ if(!LINES.length){toast('明細がありません');return;}
+  if(!($('hTokui').value||'').trim()){ toast('得意先コードが空です。②で得意先を検索して選んでください'); $('hTokui').focus(); const el=$('hTokui'); if(el){el.style.outline='2px solid #d33';setTimeout(()=>el.style.outline='',2500);} return; }
+  // 見積番号を採番（スプレッドシート共有カウンタ。全PCで連番・重複なし）
+  if(!GAS_URL){ toast('スプレッドシート未接続のため採番できません'); return; }
+  toast('見積番号を採番中…',true);
+  try{
+    const r=await fetch(GAS_URL,{method:'POST',headers:{'Content-Type':'text/plain;charset=utf-8'},body:JSON.stringify({action:'nextQuote'})});
+    const j=await r.json();
+    if(!j||!j.ok||!j.no) throw new Error((j&&j.error)||'採番に失敗');
+    $('hNo').value=j.no;
+  }catch(err){ toastDone('見積番号の採番に失敗（通信エラー）。Code.gsを「新しいバージョン」で再デプロイしてください'); return; }
   const t=buildCsv(); $('csvOut').textContent=t;   // プレビューも更新
   const blob=toSjisBlob(t); const a=document.createElement('a');
   a.href=URL.createObjectURL(blob); a.download=`yayoi_mitsumori_${$('hNo').value||'out'}.txt`; a.click(); setTimeout(()=>URL.revokeObjectURL(a.href),1000);
@@ -1257,7 +1311,7 @@ $('tokuiIn').addEventListener('change',async e=>{
     const res=await fetch(GAS_URL,{method:'POST',headers:{'Content-Type':'text/plain;charset=utf-8'},body:JSON.stringify({action:'setTokui',rows})});
     const j=await res.json(); if(!j.ok||typeof j.count!=='number')throw new Error('スプレッドシート側が未更新の可能性。Code.gsを「新しいバージョン」で再デプロイしてください');
     try{ localStorage.removeItem('alltokui'); }catch(_){}
-    await loadAllTokui();
+    await loadAllTokui(); populateTokuiLists();
     const st=$('tokuiMasterStat'); if(st)st.textContent=`スプレッドシート登録済み：${j.count}件`;
     toastDone(`得意先台帳 ${j.count}件を登録しました`);
   }catch(err){ const m=(err&&err.message)||String(err); toastDone('得意先の登録に失敗'); const st=$('tokuiMasterStat'); if(st)st.textContent='登録に失敗: '+m; console.error(err); }
@@ -1453,6 +1507,6 @@ loadFormatsGAS();    // 登録済みの仕入先書式を読み込む
 loadLearnedGAS();    // 名寄せ学習データを読み込む
 loadAllMaster().then(()=>{ const e=$('masterLoadStat'); if(e)e.textContent=ALLMASTER.length?`商品マスタ ${ALLMASTER.length}件 検索可`:'';
   setMasterStat(MASTER_FROM_SHEET?`スプレッドシート商品台帳：${ALLMASTER.length}件 使用中`:`内蔵マスタ使用中（${ALLMASTER.length}件）`); }); // 検索用マスタ＋状態表示
-loadAllTokui().then(()=>{ const e=$('tokuiStat'); if(e)e.textContent=ALLTOKUI.length?`得意先 ${ALLTOKUI.length}件 検索可`:'（得意先台帳が未登録。管理→得意先台帳マスタで取り込み）'; const st=$('tokuiMasterStat'); if(st&&ALLTOKUI.length)st.textContent=`登録済み：${ALLTOKUI.length}件`; }); // 得意先マスタ
+loadAllTokui().then(()=>{ populateTokuiLists(); const e=$('tokuiStat'); if(e)e.textContent=ALLTOKUI.length?`得意先 ${ALLTOKUI.length}件 検索可`:'（得意先台帳が未登録。管理→得意先台帳マスタで取り込み）'; const st=$('tokuiMasterStat'); if(st&&ALLTOKUI.length)st.textContent=`登録済み：${ALLTOKUI.length}件`; }); // 得意先マスタ
 loadAllTanto().then(()=>{ fillTantoSelect(); syncTantoFromProfile(); const st=$('tantoMasterStat'); if(st&&TANTO.length)st.textContent=`登録済み：${TANTO.length}件`; }); // 担当者マスタ（GASがあれば上書き）
 </script>
