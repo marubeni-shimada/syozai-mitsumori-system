@@ -50,6 +50,12 @@
   .filebtn{position:relative;overflow:hidden;display:inline-block}
   .filebtn input{position:absolute;inset:0;opacity:0;cursor:pointer}
   .hint{font-size:.74rem;color:var(--muted);margin:8px 0 0}
+  .dropzone{border:2px dashed var(--line);border-radius:14px;padding:26px 16px;text-align:center;cursor:pointer;color:var(--muted);transition:border-color .15s,background .15s,color .15s;background:var(--bg)}
+  .dropzone:hover,.dropzone.drag{border-color:var(--accent);background:var(--accent-soft);color:var(--accent)}
+  .dz-ico{font-size:26px;line-height:1}
+  .dz-main{font-weight:700;font-size:15px;margin-top:6px;color:var(--fg)}
+  .dropzone:hover .dz-main,.dropzone.drag .dz-main{color:var(--accent)}
+  .dz-sub{font-size:12px;margin-top:3px}
   .tag{display:inline-block;font-size:.68rem;padding:1px 7px;border-radius:999px;font-weight:700;letter-spacing:.02em;animation:pop .28s cubic-bezier(.34,1.56,.64,1)}
   .tag.ok{background:var(--sell-soft);color:var(--sell)}
   .tag.chk{background:var(--warn-soft);color:var(--warn)}
@@ -159,6 +165,7 @@
     <button type="button" class="tab" data-t="2"><span class="n">2</span>金額と品チェック</button>
     <button type="button" class="tab" data-t="3"><span class="n">3</span>エクスポート</button>
     <button type="button" class="tab admin-only" data-t="4" id="tabFormat" hidden><span class="n">⚙</span>書式登録</button>
+    <button type="button" class="tab admin-only" data-t="5" id="tabQuotes" hidden><span class="n">#</span>見積番号管理</button>
   </div>
 
   <section class="step" id="step1">
@@ -193,8 +200,13 @@
   <!-- ① 入力 -->
   <div class="card">
     <h2>① 見積を読み込む</h2>
-    <div class="row">
-      <span class="filebtn"><button type="button">PDFを読み込む</button><input type="file" id="pdfIn" accept="application/pdf" multiple></span>
+    <div id="pdfDrop" class="dropzone">
+      <div class="dz-ico">⬆</div>
+      <div class="dz-main">PDFをドラッグ＆ドロップ</div>
+      <div class="dz-sub">またはクリックしてファイルを選択（別の仕入先は②で「＋PDFを追加」）</div>
+      <input type="file" id="pdfIn" accept="application/pdf" multiple hidden>
+    </div>
+    <div class="row" style="margin-top:10px">
       <button type="button" class="ghost" id="loadSample">サンプルを読込</button>
       <button type="button" class="ghost" id="addRow">＋ 明細行を追加</button>
       <button type="button" class="ghost" id="clearDraft">新規（クリア）</button>
@@ -255,7 +267,7 @@
     </div>
     <div id="tokuiResults" style="margin:0 0 10px;max-height:220px;overflow:auto;border:1px solid var(--line);border-radius:8px;display:none"></div>
     <div class="row">
-      <div class="f"><label>見積番号（自動採番）</label><input class="s" id="hNo" value="" placeholder="エクスポート時に自動" readonly></div>
+      <div class="f"><label>見積番号（自動採番）</label><input class="s" id="hNo" value="" placeholder="エクスポート時に自動" readonly><span class="hint" id="hNoPeek" style="margin-top:4px"></span></div>
       <div class="f"><label>見積日（自動・今日）</label><input class="s" id="hDate" value="" readonly title="作成日（今日）が自動で入ります"></div>
       <div class="f"><label>得意先コード（検索プルダウン）</label><input class="s" id="hTokui" value="" list="tokuiCodeList" autocomplete="off"><datalist id="tokuiCodeList"></datalist></div>
       <div class="f"><label>得意先名（検索プルダウン）</label><input class="m" id="hTokuiName" value="" list="tokuiNameList" autocomplete="off"><datalist id="tokuiNameList"></datalist></div>
@@ -451,6 +463,23 @@
 
     <div class="stepnav"><button type="button" class="ghost" data-go="1">◀ 戻る</button><span></span></div>
   </section>
+
+  <!-- 見積番号管理（管理者専用） -->
+  <section class="step" id="step5" hidden>
+    <div class="card">
+      <h2>見積番号管理</h2>
+      <p class="hint" style="margin-top:0">エクスポートで発行した見積番号の一覧です。<b>使わなかった番号は❌で解放</b>すると、次回の採番で若い順に再利用されます。<br>※すでに弥生へ取り込んだ番号は解放しないでください（弥生側で番号が衝突します）。</p>
+      <div class="row" style="margin:8px 0">
+        <button type="button" class="ghost" id="quotesReload">再読み込み</button>
+        <span class="hint" id="quotesStat"></span>
+      </div>
+      <div class="tablewrap">
+        <table style="min-width:640px"><thead><tr><th class="l">番号</th><th class="l">発行日時</th><th class="l">見積日</th><th class="l">得意先</th><th class="l">件名</th><th class="l">状態</th><th></th></tr></thead>
+        <tbody id="quotesRows"></tbody></table>
+      </div>
+    </div>
+    <div class="stepnav"><button type="button" class="ghost" data-go="1">◀ 戻る</button><span></span></div>
+  </section>
 </div>
 <div class="toast" id="toast"></div>
 
@@ -597,7 +626,7 @@ function renderRules(){
 }
 function bindProfileUI(){
   $('profSel').addEventListener('change',e=>{ curIdx=+e.target.value; renderProfiles(); applyProfileToLines(); render(); syncTantoFromProfile(); });
-  $('pMargin').addEventListener('input',e=>{ curProfile().defMargin=parseFloat(e.target.value)||0; applyProfileToLines(); recompute(); saveProfOverrides(); });
+  $('pMargin').addEventListener('input',e=>{ curProfile().defMargin=parseFloat(e.target.value)||0; applyProfileToLines(); render(); saveProfOverrides(); });
   $('pRoundUnit').addEventListener('change',e=>{ curProfile().defUnit=+e.target.value; applyProfileToLines(); recompute(); saveProfOverrides(); });
   $('pRoundMode').addEventListener('change',e=>{ curProfile().defMode=e.target.value; applyProfileToLines(); recompute(); saveProfOverrides(); });
   $('ruleAdd').addEventListener('click',()=>{ curProfile().rules.push({min:'',max:'',margin:curProfile().defMargin,unit:curProfile().defUnit,mode:curProfile().defMode,enabled:true}); renderRules(); saveProfOverrides(); });
@@ -1011,10 +1040,11 @@ function askSupplier(detected,file){
   return (v&&v.trim())||base||'仕入先';
 }
 // 新規読込（複数ファイル可。1枚目＝入れ替え、2枚目以降＝追記＝複数仕入先を1見積に）
-$('pdfIn').addEventListener('change',async e=>{
-  const files=Array.from(e.target.files||[]); if(!files.length)return; toast('PDF解析中…',true);
+async function processPdfFiles(fileList){
+  const files=Array.from(fileList||[]); if(!files.length)return; toast('PDF解析中…',true);
   let replaced=false, total=0, nfile=0;
   for(const file of files){
+    if(!/\.pdf$/i.test(file.name||'')){ continue; }   // PDF以外は無視
     let res; try{ res=await parsePdfFile(file); }catch(err){ console.error(err); continue; }
     const {parsed,fmt,supplier}=res;
     if(!parsed.some(r=>r[0]==='item')) continue;
@@ -1033,8 +1063,16 @@ $('pdfIn').addEventListener('change',async e=>{
   }
   if(total) resolveAll();   // 全ファイル読み込み後にまとめて名寄せ
   toastDone(total?`明細 ${total} 件を読込（${nfile}ファイル）`:'明細を自動抽出できませんでした。手入力で。');
-  e.target.value='';
-});
+}
+$('pdfIn').addEventListener('change',e=>{ processPdfFiles(e.target.files); e.target.value=''; });
+// ドロップ領域（Renue図面と同じ操作感）
+(function(){ const dz=$('pdfDrop'); if(!dz)return;
+  dz.addEventListener('click',()=>$('pdfIn').click());
+  ['dragenter','dragover'].forEach(ev=>dz.addEventListener(ev,e=>{ e.preventDefault(); e.stopPropagation(); dz.classList.add('drag'); }));
+  ['dragleave','dragend'].forEach(ev=>dz.addEventListener(ev,e=>{ e.preventDefault(); e.stopPropagation(); dz.classList.remove('drag'); }));
+  dz.addEventListener('drop',e=>{ e.preventDefault(); e.stopPropagation(); dz.classList.remove('drag');
+    const files=e.dataTransfer&&e.dataTransfer.files; if(files&&files.length) processPdfFiles(files); });
+})();
 // 追加読込（②から。今の見積に足す。複数ファイル可）
 $('pdfAddIn').addEventListener('change',async e=>{
   const files=Array.from(e.target.files||[]); if(!files.length)return;
@@ -1306,7 +1344,8 @@ $('dlCsv').addEventListener('click',async()=>{ if(!LINES.length){toast('明細�
     if(!GAS_URL){ toast('スプレッドシート未接続のため採番できません'); return; }
     toast('見積番号を採番中…',true);
     try{
-      const r=await fetch(GAS_URL,{method:'POST',headers:{'Content-Type':'text/plain;charset=utf-8'},body:JSON.stringify({action:'nextQuote'})});
+      const meta={date:$('hDate').value||'',tokui:$('hTokui').value||'',tname:$('hTokuiName').value||'',kenmei:($('hKenmei')?$('hKenmei').value:'')||'',supplier:($('hSupplier')?$('hSupplier').value:'')||''};
+      const r=await fetch(GAS_URL,{method:'POST',headers:{'Content-Type':'text/plain;charset=utf-8'},body:JSON.stringify({action:'nextQuote',meta})});
       const j=await r.json();
       if(!j||!j.ok||!j.no) throw new Error((j&&j.error)||'採番に失敗');
       $('hNo').value=j.no; saveDraft();   // 見積に番号を保持（再エクスポートで再利用）
@@ -1317,6 +1356,7 @@ $('dlCsv').addEventListener('click',async()=>{ if(!LINES.length){toast('明細�
   a.href=URL.createObjectURL(blob); a.download=`yayoi_mitsumori_${$('hNo').value||'out'}.txt`; a.click(); setTimeout(()=>URL.revokeObjectURL(a.href),1000);
   learnCurrent();  // 確定した 仕入先＋品名→コード を学習
   finishDraft();   // エクスポートした見積は「続きから」一覧から消す
+  peekQuoteNo();   // 次の番号（目安）を更新
   toast(window.Encoding?'エクスポートしました（Shift-JIS）':'エクスポートしました（UTF-8）'); });
 
 let tt; function toast(m,busy){const t=$('toast');t.innerHTML=(busy?'<span class="spin"></span>':'')+esc(m);t.classList.add('show');clearTimeout(tt);if(!busy)tt=setTimeout(()=>t.classList.remove('show'),1800);}
@@ -1418,9 +1458,52 @@ $('tantoIn').addEventListener('change',async e=>{
 
 // タブ切替（方向つきアニメーション＋到達済みマーク）
 let curStep=1;
+// ===== 見積番号管理（発行一覧・解放） =====
+async function loadQuoteList(){
+  const tb=$('quotesRows'), stat=$('quotesStat'); if(!tb)return;
+  tb.innerHTML=`<tr><td colspan="7" class="hint" style="padding:8px">読み込み中…</td></tr>`;
+  if(!GAS_URL){ tb.innerHTML=`<tr><td colspan="7" class="hint" style="padding:8px">スプレッドシート未接続</td></tr>`; return; }
+  try{
+    const r=await fetch(GAS_URL,{method:'POST',headers:{'Content-Type':'text/plain;charset=utf-8'},body:JSON.stringify({action:'listQuotes'})});
+    const j=await r.json();
+    if(!j||!j.ok) throw new Error('取得失敗');
+    const items=j.items||[];
+    if(stat) stat.textContent=`発行 ${items.filter(x=>x.status!=='取消').length}件 / 取消 ${items.filter(x=>x.status==='取消').length}件`;
+    tb.innerHTML = items.length ? items.map(it=>{
+      const cancelled=it.status==='取消';
+      const act = cancelled ? '<span class="hint">解放済</span>'
+        : `<button class="ghost sm qdel" data-qno="${esc(it.no)}" style="color:var(--warn)">❌ 解放</button>`;
+      return `<tr style="${cancelled?'opacity:.5':''}"><td class="l mono">${esc(it.no)}</td><td class="l">${esc(it.issued)}</td><td class="l">${esc(it.date)}</td><td class="l">${esc(it.tokui)} ${esc(it.tname)}</td><td class="l">${esc(it.kenmei)}</td><td class="l">${esc(it.status)}</td><td>${act}</td></tr>`;
+    }).join('') : `<tr><td colspan="7" class="hint" style="padding:8px">まだ発行された番号はありません</td></tr>`;
+  }catch(err){ tb.innerHTML=`<tr><td colspan="7" class="hint" style="padding:8px">読み込みに失敗（Code.gsの再デプロイを確認）</td></tr>`; }
+}
+async function releaseQuoteNo(no){
+  if(!confirm(`見積番号 ${no} を解放しますか？\nこの番号は次回の採番で再利用されます。\n※すでに弥生へ取り込んだ番号は解放しないでください。`)) return;
+  toast('解放中…',true);
+  try{
+    const r=await fetch(GAS_URL,{method:'POST',headers:{'Content-Type':'text/plain;charset=utf-8'},body:JSON.stringify({action:'releaseQuote',no})});
+    const j=await r.json();
+    if(j&&j.ok&&j.released){ toastDone(`${no} を解放しました`); loadQuoteList(); }
+    else toastDone('解放できませんでした');
+  }catch(err){ toastDone('解放に失敗（通信エラー）'); }
+}
+(function(){ const reload=$('quotesReload'); if(reload)reload.addEventListener('click',loadQuoteList);
+  const tb=$('quotesRows'); if(tb)tb.addEventListener('click',e=>{ const b=e.target.closest('[data-qno]'); if(b)releaseQuoteNo(b.dataset.qno); }); })();
+
+// 見積番号の「次の番号（目安）」を②に表示（消費しない）
+async function peekQuoteNo(){
+  const e=$('hNoPeek'); if(!e) return;
+  if(($('hNo').value||'').trim()){ e.textContent='この見積の番号：'+$('hNo').value; return; }  // 採番済みならそれを表示
+  if(!GAS_URL){ e.textContent=''; return; }
+  try{
+    const r=await fetch(GAS_URL,{method:'POST',headers:{'Content-Type':'text/plain;charset=utf-8'},body:JSON.stringify({action:'peekQuote'})});
+    const j=await r.json();
+    if(j&&j.ok&&j.no) e.textContent='次の番号（目安）：'+j.no;
+  }catch(_){ e.textContent=''; }
+}
 function showStep(n){
   const back = n<curStep;
-  [1,2,3,4].forEach(i=>{
+  [1,2,3,4,5].forEach(i=>{
     const sec=$('step'+i), tab=document.querySelector('.tab[data-t="'+i+'"]');
     if(!sec||!tab)return;
     sec.hidden=(i!==n);
@@ -1430,7 +1513,9 @@ function showStep(n){
   const sec=$('step'+n);
   sec.classList.remove('anim-fwd','anim-back'); void sec.offsetWidth;
   sec.classList.add(back?'anim-back':'anim-fwd');
+  if(n===2){ peekQuoteNo(); }   // ②に入ったら次の番号（目安）を更新
   if(n===3){ $('csvOut').textContent=buildCsv(); $('csvOut').hidden=false; updateNewRegCard(); }
+  if(n===5){ loadQuoteList(); }   // 見積番号管理
   curStep=n;
   window.scrollTo({top:0,behavior:'smooth'});
 }
@@ -1569,7 +1654,7 @@ fillTantoSelect();            // 担当者コードのプルダウン
 syncTantoFromProfile();       // この端末の担当者に合わせて担当者コードを初期反映
 // 作業中データ（続きから）
 HKEYS.forEach(k=>{ const e=$(k); if(e)e.addEventListener('input',saveDraft); });
-loadDrafts(); bindDrafts(); renderDraftList(); setToday();
+loadDrafts(); bindDrafts(); renderDraftList(); setToday(); peekQuoteNo();
 LINES=[]; render();   // 起動時は空。続き一覧から選ぶかPDFを読み込む
 showStep(1);
 loadProfilesGAS();   // GASに共有プリセットがあれば上書き
