@@ -224,6 +224,16 @@
       <p class="hint" style="margin:0 0 8px"><b>続きから</b>（作成途中の見積。クリックで再開。エクスポートすると消えます）</p>
       <div id="draftList" style="display:flex;flex-direction:column;gap:6px"></div>
     </div>
+    <div style="margin-top:12px;border-top:1px solid var(--line);padding-top:12px">
+      <div style="display:flex;align-items:center;gap:8px;cursor:pointer" id="myExpToggle">
+        <span id="myExpCaret" style="transition:.15s;display:inline-block">▸</span>
+        <b style="font-size:.88rem">自分のエクスポート履歴</b>
+        <span class="hint" id="myExpStat"></span>
+      </div>
+      <div id="myExpBody" hidden style="margin-top:8px">
+        <div class="tablewrap"><table style="min-width:560px"><thead><tr><th class="l">番号</th><th class="l">発行日時</th><th class="l">見積日</th><th class="l">得意先</th><th class="l">件名</th></tr></thead><tbody id="myExpRows"></tbody></table></div>
+      </div>
+    </div>
   </div>
 
   <!-- 商品台帳マスタ登録（管理者のみ） -->
@@ -485,7 +495,7 @@
         <span class="hint" id="quotesStat"></span>
       </div>
       <div class="tablewrap">
-        <table style="min-width:640px"><thead><tr><th class="l">番号</th><th class="l">発行日時</th><th class="l">見積日</th><th class="l">得意先</th><th class="l">件名</th><th class="l">状態</th><th></th></tr></thead>
+        <table style="min-width:700px"><thead><tr><th class="l">番号</th><th class="l">発行日時</th><th class="l">見積日</th><th class="l">得意先</th><th class="l">件名</th><th class="l">担当者</th><th class="l">状態</th><th></th></tr></thead>
         <tbody id="quotesRows"></tbody></table>
       </div>
     </div>
@@ -1366,7 +1376,7 @@ $('dlCsv').addEventListener('click',async()=>{ if(!LINES.length){toast('明細�
     if(!GAS_URL){ toast('スプレッドシート未接続のため採番できません'); return; }
     toast('見積番号を採番中…',true); showLoading('見積番号を採番中…');
     try{
-      const meta={date:$('hDate').value||'',tokui:$('hTokui').value||'',tname:$('hTokuiName').value||'',kenmei:($('hKenmei')?$('hKenmei').value:'')||'',supplier:($('hSupplier')?$('hSupplier').value:'')||''};
+      const meta={date:$('hDate').value||'',tokui:$('hTokui').value||'',tname:$('hTokuiName').value||'',kenmei:($('hKenmei')?$('hKenmei').value:'')||'',supplier:($('hSupplier')?$('hSupplier').value:'')||'',by:(getMyName()||curProfile().name||'')};
       const r=await fetch(GAS_URL,{method:'POST',headers:{'Content-Type':'text/plain;charset=utf-8'},body:JSON.stringify({action:'nextQuote',meta})});
       const j=await r.json();
       if(!j||!j.ok||!j.no) throw new Error((j&&j.error)||'採番に失敗');
@@ -1380,6 +1390,7 @@ $('dlCsv').addEventListener('click',async()=>{ if(!LINES.length){toast('明細�
   learnCurrent();  // 確定した 仕入先＋品名→コード を学習
   finishDraft();   // エクスポートした見積は「続きから」一覧から消す
   peekQuoteNo();   // 次の番号（目安）を更新
+  if($('myExpBody')&&!$('myExpBody').hidden) loadMyExports();   // 自分の履歴を開いていれば更新
   toast(window.Encoding?'エクスポートしました（Shift-JIS）':'エクスポートしました（UTF-8）'); });
 
 // 全画面ローディング（他操作をブロック）。多重呼び出しに備えてカウント式
@@ -1489,14 +1500,14 @@ let curStep=1;
 let QUOTES_CACHE=[]; let qFilter='open';   // open=未解放 / released=解放済
 async function loadQuoteList(){
   const tb=$('quotesRows'); if(!tb)return;
-  tb.innerHTML=`<tr><td colspan="7" class="hint" style="padding:8px">読み込み中…</td></tr>`;
-  if(!GAS_URL){ tb.innerHTML=`<tr><td colspan="7" class="hint" style="padding:8px">スプレッドシート未接続</td></tr>`; return; }
+  tb.innerHTML=`<tr><td colspan="8" class="hint" style="padding:8px">読み込み中…</td></tr>`;
+  if(!GAS_URL){ tb.innerHTML=`<tr><td colspan="8" class="hint" style="padding:8px">スプレッドシート未接続</td></tr>`; return; }
   try{
     const r=await fetch(GAS_URL,{method:'POST',headers:{'Content-Type':'text/plain;charset=utf-8'},body:JSON.stringify({action:'listQuotes'})});
     const j=await r.json();
     if(!j||!j.ok) throw new Error('取得失敗');
     QUOTES_CACHE=j.items||[]; renderQuoteRows();
-  }catch(err){ tb.innerHTML=`<tr><td colspan="7" class="hint" style="padding:8px">読み込みに失敗（Code.gsの再デプロイを確認）</td></tr>`; }
+  }catch(err){ tb.innerHTML=`<tr><td colspan="8" class="hint" style="padding:8px">読み込みに失敗（Code.gsの再デプロイを確認）</td></tr>`; }
 }
 function renderQuoteRows(){
   const tb=$('quotesRows'), stat=$('quotesStat'); if(!tb)return;
@@ -1508,8 +1519,8 @@ function renderQuoteRows(){
     const cancelled=it.status==='取消';
     const act = cancelled ? '<span class="hint">解放済</span>'
       : `<button class="ghost sm qdel" data-qno="${esc(it.no)}" style="color:var(--warn)">❌ 解放</button>`;
-    return `<tr style="${cancelled?'opacity:.55':''}"><td class="l mono">${esc(it.no)}</td><td class="l">${esc(it.issued)}</td><td class="l">${esc(it.date)}</td><td class="l">${esc(it.tokui)} ${esc(it.tname)}</td><td class="l">${esc(it.kenmei)}</td><td class="l">${esc(it.status)}</td><td>${act}</td></tr>`;
-  }).join('') : `<tr><td colspan="7" class="hint" style="padding:8px">${qFilter==='released'?'解放済の番号はありません':'未解放の番号はありません'}</td></tr>`;
+    return `<tr style="${cancelled?'opacity:.55':''}"><td class="l mono">${esc(it.no)}</td><td class="l">${esc(it.issued)}</td><td class="l">${esc(it.date)}</td><td class="l">${esc(it.tokui)} ${esc(it.tname)}</td><td class="l">${esc(it.kenmei)}</td><td class="l">${esc(it.by||'')}</td><td class="l">${esc(it.status)}</td><td>${act}</td></tr>`;
+  }).join('') : `<tr><td colspan="8" class="hint" style="padding:8px">${qFilter==='released'?'解放済の番号はありません':'未解放の番号はありません'}</td></tr>`;
 }
 async function releaseQuoteNo(no){
   if(!confirm(`見積番号 ${no} を解放しますか？\nこの番号は次回の採番で再利用されます。\n※すでに弥生へ取り込んだ番号は解放しないでください。`)) return;
@@ -1524,6 +1535,21 @@ async function releaseQuoteNo(no){
 (function(){ const reload=$('quotesReload'); if(reload)reload.addEventListener('click',loadQuoteList);
   const tb=$('quotesRows'); if(tb)tb.addEventListener('click',e=>{ const b=e.target.closest('[data-qno]'); if(b)releaseQuoteNo(b.dataset.qno); });
   document.querySelectorAll('.qtab').forEach(b=>b.addEventListener('click',()=>{ qFilter=b.dataset.qtab; document.querySelectorAll('.qtab').forEach(x=>x.classList.toggle('on',x===b)); renderQuoteRows(); })); })();
+
+// ===== 自分のエクスポート履歴（①・この端末の担当者で絞り込み） =====
+async function loadMyExports(){
+  const body=$('myExpBody'); if(!body)return; const tb=$('myExpRows'), stat=$('myExpStat');
+  const me=(getMyName()||curProfile().name||'').trim();
+  if(!GAS_URL||!me){ if(tb)tb.innerHTML=`<tr><td colspan="5" class="hint" style="padding:8px">${me?'スプレッドシート未接続':'担当者を設定すると表示されます'}</td></tr>`; return; }
+  try{
+    const r=await fetch(GAS_URL,{method:'POST',headers:{'Content-Type':'text/plain;charset=utf-8'},body:JSON.stringify({action:'listQuotes'})});
+    const j=await r.json(); if(!j||!j.ok)throw 0;
+    const mine=(j.items||[]).filter(it=> it.by===me);
+    if(stat) stat.textContent=`（${mine.length}件）`;
+    if(tb) tb.innerHTML = mine.length ? mine.map(it=>`<tr style="${it.status==='取消'?'opacity:.5':''}"><td class="l mono">${esc(it.no)}</td><td class="l">${esc(it.issued)}</td><td class="l">${esc(it.date)}</td><td class="l">${esc(it.tokui)} ${esc(it.tname)}</td><td class="l">${esc(it.kenmei)}</td></tr>`).join('') : `<tr><td colspan="5" class="hint" style="padding:8px">まだありません</td></tr>`;
+  }catch(_){ if(tb)tb.innerHTML=`<tr><td colspan="5" class="hint" style="padding:8px">読み込めませんでした（Code.gs再デプロイを確認）</td></tr>`; }
+}
+(function(){ const t=$('myExpToggle'); if(!t)return; t.addEventListener('click',()=>{ const b=$('myExpBody'); const willOpen=b.hidden; b.hidden=!willOpen; const c=$('myExpCaret'); if(c)c.textContent=willOpen?'▾':'▸'; if(willOpen) loadMyExports(); }); })();
 
 // 見積番号の「次の番号（目安）」を②に表示（消費しない）
 async function peekQuoteNo(){
