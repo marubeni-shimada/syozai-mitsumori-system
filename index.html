@@ -96,6 +96,13 @@
   /* スピナー */
   .spin{display:inline-block;width:14px;height:14px;border:2px solid currentColor;border-right-color:transparent;border-radius:50%;animation:rot .6s linear infinite;vertical-align:-2px}
   @keyframes rot{to{transform:rotate(360deg)}}
+  #loadingOverlay{position:fixed;inset:0;z-index:9999;background:rgba(10,14,20,.45);display:flex;align-items:center;justify-content:center}
+  #loadingOverlay[hidden]{display:none}
+  .loadbox{background:var(--surface);border:1px solid var(--line);border-radius:14px;padding:22px 28px;display:flex;flex-direction:column;align-items:center;gap:12px;box-shadow:0 12px 32px rgba(0,0,0,.28)}
+  .loadspin{width:34px;height:34px;border:3px solid var(--line);border-top-color:var(--accent);border-radius:50%;animation:rot .8s linear infinite}
+  .loadmsg{font-size:13px;color:var(--fg);font-weight:700}
+  .qtab{border:1px solid var(--line);background:var(--surface);color:var(--fg);padding:5px 14px;border-radius:999px;cursor:pointer;font-weight:600;font-size:.82rem}
+  .qtab.on{background:var(--accent);color:#fff;border-color:var(--accent)}
   /* ステップ切替 */
   .step.anim-fwd{animation:stepIn .34s cubic-bezier(.22,.9,.3,1)}
   @keyframes stepIn{from{opacity:0;transform:translateX(16px)}to{opacity:1;transform:translateX(0)}}
@@ -469,7 +476,11 @@
     <div class="card">
       <h2>見積番号管理</h2>
       <p class="hint" style="margin-top:0">エクスポートで発行した見積番号の一覧です。<b>使わなかった番号は❌で解放</b>すると、次回の採番で若い順に再利用されます。<br>※すでに弥生へ取り込んだ番号は解放しないでください（弥生側で番号が衝突します）。</p>
-      <div class="row" style="margin:8px 0">
+      <div class="row" style="margin:8px 0;gap:8px;align-items:center">
+        <div class="qtabs" style="display:flex;gap:6px">
+          <button type="button" class="qtab on" data-qtab="open">未解放</button>
+          <button type="button" class="qtab" data-qtab="released">解放済</button>
+        </div>
         <button type="button" class="ghost" id="quotesReload">再読み込み</button>
         <span class="hint" id="quotesStat"></span>
       </div>
@@ -481,6 +492,7 @@
     <div class="stepnav"><button type="button" class="ghost" data-go="1">◀ 戻る</button><span></span></div>
   </section>
 </div>
+<div id="loadingOverlay" hidden><div class="loadbox"><div class="loadspin"></div><div class="loadmsg" id="loadingMsg">読み込み中…</div></div></div>
 <div class="toast" id="toast"></div>
 
 <script>
@@ -534,11 +546,14 @@ function applyResult(l,r){ l.cand=r.cand||[]; l.verdict=r.verdict||'new'; l.code
 function setMasterStat(t){ const e=$('masterStat'); if(e)e.textContent=t; }
 async function resolveAll(){
   const items=LINES.filter(l=>l.kind==='item'); if(!items.length)return;
-  if(GAS_URL){ try{ toast('名寄せ中…',true); const j=await gasMatch(items.map(l=>({name:l.name,unit:l.unit})));
-      items.forEach((l,i)=>applyResult(l,j.results[i])); render();
-      setMasterStat(`スプレッドシート商品台帳：${j.masterCount}件 使用中`); toastDone(`名寄せ：スプレッドシート商品台帳 ${j.masterCount}件`); return; }
-    catch(e){ setMasterStat('スプレッドシート接続不可：内蔵マスタ使用中'); toastDone('接続不可：内蔵マスタで名寄せ'); } }
-  items.forEach(l=>applyResult(l,matchTop(l.name,l.unit))); render();
+  showLoading('名寄せ中…');
+  try{
+    if(GAS_URL){ try{ toast('名寄せ中…',true); const j=await gasMatch(items.map(l=>({name:l.name,unit:l.unit})));
+        items.forEach((l,i)=>applyResult(l,j.results[i])); render();
+        setMasterStat(`スプレッドシート商品台帳：${j.masterCount}件 使用中`); toastDone(`名寄せ：スプレッドシート商品台帳 ${j.masterCount}件`); return; }
+      catch(e){ setMasterStat('スプレッドシート接続不可：内蔵マスタ使用中'); toastDone('接続不可：内蔵マスタで名寄せ'); } }
+    items.forEach(l=>applyResult(l,matchTop(l.name,l.unit))); render();
+  } finally { hideLoading(); }
 }
 // CSV解析（ダブルクオート対応）
 function parseCSV(text){
@@ -657,8 +672,8 @@ function bindAdmin(){
   $('adminBtn').addEventListener('click',async()=>{
     if(ADMIN){ ADMIN=false; applyAdminUI(); toast('管理者ログアウト'); return; }
     const pin=prompt('管理者PINを入力'); if(pin===null)return;
-    if(GAS_URL){ try{ const r=await fetch(GAS_URL,{method:'POST',headers:{'Content-Type':'text/plain;charset=utf-8'},body:JSON.stringify({action:'checkAdmin',pin})});
-        const j=await r.json(); if(j.ok&&j.admin){ ADMIN=true; applyAdminUI(); toast('管理者でログインしました'); } else toast('PINが違います'); return; }catch(_){} }
+    if(GAS_URL){ showLoading('認証中…'); try{ const r=await fetch(GAS_URL,{method:'POST',headers:{'Content-Type':'text/plain;charset=utf-8'},body:JSON.stringify({action:'checkAdmin',pin})});
+        const j=await r.json(); if(j.ok&&j.admin){ ADMIN=true; applyAdminUI(); toast('管理者でログインしました'); } else toast('PINが違います'); return; }catch(_){}finally{ hideLoading(); } }
     // GAS未接続時のフォールバック（既定PIN 0000）
     if(pin==='0000'){ ADMIN=true; applyAdminUI(); toast('管理者でログイン（ローカル判定）'); } else toast('PINが違います');
   });
@@ -1042,27 +1057,30 @@ function askSupplier(detected,file){
 // 新規読込（複数ファイル可。1枚目＝入れ替え、2枚目以降＝追記＝複数仕入先を1見積に）
 async function processPdfFiles(fileList){
   const files=Array.from(fileList||[]); if(!files.length)return; toast('PDF解析中…',true);
-  let replaced=false, total=0, nfile=0;
-  for(const file of files){
-    if(!/\.pdf$/i.test(file.name||'')){ continue; }   // PDF以外は無視
-    let res; try{ res=await parsePdfFile(file); }catch(err){ console.error(err); continue; }
-    const {parsed,fmt,supplier}=res;
-    if(!parsed.some(r=>r[0]==='item')) continue;
-    const sup=askSupplier(supplier,file);   // 自動判別できなければ会社名を入力
-    if(!replaced){
-      curDraftId=null; curDraftName=(file.name||'見積').replace(/\.pdf$/i,'');  // PDF名で新しい続きを作る
-      if($('hNo'))$('hNo').value='';   // 新しい見積＝番号リセット
-      curSupplier=sup;
-      if($('hSupplier')&&!$('hSupplier').value) $('hSupplier').value=sup;
-      loadLines(parsed,{supplier:sup,defer:true}); replaced=true;
-    } else {
-      curSupplier=sup;
-      loadLines(parsed,{supplier:sup,append:true,defer:true});
+  showLoading('PDF解析中…');
+  try{
+    let replaced=false, total=0, nfile=0;
+    for(const file of files){
+      if(!/\.pdf$/i.test(file.name||'')){ continue; }   // PDF以外は無視
+      let res; try{ res=await parsePdfFile(file); }catch(err){ console.error(err); continue; }
+      const {parsed,fmt,supplier}=res;
+      if(!parsed.some(r=>r[0]==='item')) continue;
+      const sup=askSupplier(supplier,file);   // 自動判別できなければ会社名を入力
+      if(!replaced){
+        curDraftId=null; curDraftName=(file.name||'見積').replace(/\.pdf$/i,'');  // PDF名で新しい続きを作る
+        if($('hNo'))$('hNo').value='';   // 新しい見積＝番号リセット
+        curSupplier=sup;
+        if($('hSupplier')&&!$('hSupplier').value) $('hSupplier').value=sup;
+        loadLines(parsed,{supplier:sup,defer:true}); replaced=true;
+      } else {
+        curSupplier=sup;
+        loadLines(parsed,{supplier:sup,append:true,defer:true});
+      }
+      total+=parsed.filter(r=>r[0]==='item').length; nfile++;
     }
-    total+=parsed.filter(r=>r[0]==='item').length; nfile++;
-  }
-  if(total) resolveAll();   // 全ファイル読み込み後にまとめて名寄せ
-  toastDone(total?`明細 ${total} 件を読込（${nfile}ファイル）`:'明細を自動抽出できませんでした。手入力で。');
+    if(total) resolveAll();   // 全ファイル読み込み後にまとめて名寄せ
+    toastDone(total?`明細 ${total} 件を読込（${nfile}ファイル）`:'明細を自動抽出できませんでした。手入力で。');
+  } finally { hideLoading(); }
 }
 $('pdfIn').addEventListener('change',e=>{ processPdfFiles(e.target.files); e.target.value=''; });
 // ドロップ領域（Renue図面と同じ操作感）
@@ -1078,18 +1096,21 @@ $('pdfAddIn').addEventListener('change',async e=>{
   const files=Array.from(e.target.files||[]); if(!files.length)return;
   if(!LINES.length){ toast('先に①でPDFを読み込んでください'); e.target.value=''; return; }
   toast('PDFを追加解析中…',true);
-  let total=0, nfile=0;
-  for(const file of files){
-    let res; try{ res=await parsePdfFile(file); }catch(err){ console.error(err); continue; }
-    const {parsed,supplier}=res;
-    if(!parsed.some(r=>r[0]==='item')) continue;
-    const sup=askSupplier(supplier,file);   // 自動判別できなければ会社名を入力
-    curSupplier=sup;
-    loadLines(parsed,{supplier:sup,append:true,defer:true});   // 得意先・見積番号・見積日はそのまま、明細だけ追記
-    total+=parsed.filter(r=>r[0]==='item').length; nfile++;
-  }
-  if(total) resolveAll();   // 追加後にまとめて名寄せ
-  toastDone(total?`追加：明細 ${total} 件（${nfile}ファイル）`:'明細を自動抽出できませんでした。');
+  showLoading('PDFを追加解析中…');
+  try{
+    let total=0, nfile=0;
+    for(const file of files){
+      let res; try{ res=await parsePdfFile(file); }catch(err){ console.error(err); continue; }
+      const {parsed,supplier}=res;
+      if(!parsed.some(r=>r[0]==='item')) continue;
+      const sup=askSupplier(supplier,file);   // 自動判別できなければ会社名を入力
+      curSupplier=sup;
+      loadLines(parsed,{supplier:sup,append:true,defer:true});   // 得意先・見積番号・見積日はそのまま、明細だけ追記
+      total+=parsed.filter(r=>r[0]==='item').length; nfile++;
+    }
+    if(total) resolveAll();   // 追加後にまとめて名寄せ
+    toastDone(total?`追加：明細 ${total} 件（${nfile}ファイル）`:'明細を自動抽出できませんでした。');
+  } finally { hideLoading(); }
   e.target.value='';
 });
 // 近いtopを同一行にまとめる
@@ -1338,11 +1359,12 @@ function toSjisBlob(text){
 $('dlCsv').addEventListener('click',async()=>{ if(!LINES.length){toast('明細がありません');return;}
   setToday();   // 見積日は常に当日
   if(!($('hTokui').value||'').trim()){ toast('得意先コードが空です。②で得意先を検索して選んでください'); $('hTokui').focus(); const el=$('hTokui'); if(el){el.style.outline='2px solid #d33';setTimeout(()=>el.style.outline='',2500);} return; }
+  if(!($('hTanto')&&($('hTanto').value||'').trim())){ toast('担当者が未選択です。②で担当者を選んでください（マージンが担当者ごとの設定になります）'); if($('hTanto')){$('hTanto').focus(); $('hTanto').style.outline='2px solid #d33'; setTimeout(()=>$('hTanto').style.outline='',2500);} return; }
   // 見積番号を採番（スプレッドシート共有カウンタ。全PCで連番・重複なし）
   // 未設定のときだけ採番。設定済み（同じ見積の再エクスポート）は同じ番号を再利用
   if(!($('hNo').value||'').trim()){
     if(!GAS_URL){ toast('スプレッドシート未接続のため採番できません'); return; }
-    toast('見積番号を採番中…',true);
+    toast('見積番号を採番中…',true); showLoading('見積番号を採番中…');
     try{
       const meta={date:$('hDate').value||'',tokui:$('hTokui').value||'',tname:$('hTokuiName').value||'',kenmei:($('hKenmei')?$('hKenmei').value:'')||'',supplier:($('hSupplier')?$('hSupplier').value:'')||''};
       const r=await fetch(GAS_URL,{method:'POST',headers:{'Content-Type':'text/plain;charset=utf-8'},body:JSON.stringify({action:'nextQuote',meta})});
@@ -1350,6 +1372,7 @@ $('dlCsv').addEventListener('click',async()=>{ if(!LINES.length){toast('明細�
       if(!j||!j.ok||!j.no) throw new Error((j&&j.error)||'採番に失敗');
       $('hNo').value=j.no; saveDraft();   // 見積に番号を保持（再エクスポートで再利用）
     }catch(err){ toastDone('見積番号の採番に失敗（通信エラー）。Code.gsを「新しいバージョン」で再デプロイしてください'); return; }
+    finally{ hideLoading(); }
   }
   const t=buildCsv(); $('csvOut').textContent=t;   // プレビューも更新
   const blob=toSjisBlob(t); const a=document.createElement('a');
@@ -1359,6 +1382,10 @@ $('dlCsv').addEventListener('click',async()=>{ if(!LINES.length){toast('明細�
   peekQuoteNo();   // 次の番号（目安）を更新
   toast(window.Encoding?'エクスポートしました（Shift-JIS）':'エクスポートしました（UTF-8）'); });
 
+// 全画面ローディング（他操作をブロック）。多重呼び出しに備えてカウント式
+let _loadN=0;
+function showLoading(msg){ const o=$('loadingOverlay'); if(!o)return; _loadN++; const m=$('loadingMsg'); if(m)m.textContent=msg||'読み込み中…'; o.hidden=false; }
+function hideLoading(){ const o=$('loadingOverlay'); if(!o)return; _loadN=Math.max(0,_loadN-1); if(_loadN<=0){ _loadN=0; o.hidden=true; } }
 let tt; function toast(m,busy){const t=$('toast');t.innerHTML=(busy?'<span class="spin"></span>':'')+esc(m);t.classList.add('show');clearTimeout(tt);if(!busy)tt=setTimeout(()=>t.classList.remove('show'),1800);}
 function toastDone(m){clearTimeout(tt);const t=$('toast');t.innerHTML=esc(m);t.classList.add('show');tt=setTimeout(()=>t.classList.remove('show'),1800);}
 
@@ -1459,23 +1486,30 @@ $('tantoIn').addEventListener('change',async e=>{
 // タブ切替（方向つきアニメーション＋到達済みマーク）
 let curStep=1;
 // ===== 見積番号管理（発行一覧・解放） =====
+let QUOTES_CACHE=[]; let qFilter='open';   // open=未解放 / released=解放済
 async function loadQuoteList(){
-  const tb=$('quotesRows'), stat=$('quotesStat'); if(!tb)return;
+  const tb=$('quotesRows'); if(!tb)return;
   tb.innerHTML=`<tr><td colspan="7" class="hint" style="padding:8px">読み込み中…</td></tr>`;
   if(!GAS_URL){ tb.innerHTML=`<tr><td colspan="7" class="hint" style="padding:8px">スプレッドシート未接続</td></tr>`; return; }
   try{
     const r=await fetch(GAS_URL,{method:'POST',headers:{'Content-Type':'text/plain;charset=utf-8'},body:JSON.stringify({action:'listQuotes'})});
     const j=await r.json();
     if(!j||!j.ok) throw new Error('取得失敗');
-    const items=j.items||[];
-    if(stat) stat.textContent=`発行 ${items.filter(x=>x.status!=='取消').length}件 / 取消 ${items.filter(x=>x.status==='取消').length}件`;
-    tb.innerHTML = items.length ? items.map(it=>{
-      const cancelled=it.status==='取消';
-      const act = cancelled ? '<span class="hint">解放済</span>'
-        : `<button class="ghost sm qdel" data-qno="${esc(it.no)}" style="color:var(--warn)">❌ 解放</button>`;
-      return `<tr style="${cancelled?'opacity:.5':''}"><td class="l mono">${esc(it.no)}</td><td class="l">${esc(it.issued)}</td><td class="l">${esc(it.date)}</td><td class="l">${esc(it.tokui)} ${esc(it.tname)}</td><td class="l">${esc(it.kenmei)}</td><td class="l">${esc(it.status)}</td><td>${act}</td></tr>`;
-    }).join('') : `<tr><td colspan="7" class="hint" style="padding:8px">まだ発行された番号はありません</td></tr>`;
+    QUOTES_CACHE=j.items||[]; renderQuoteRows();
   }catch(err){ tb.innerHTML=`<tr><td colspan="7" class="hint" style="padding:8px">読み込みに失敗（Code.gsの再デプロイを確認）</td></tr>`; }
+}
+function renderQuoteRows(){
+  const tb=$('quotesRows'), stat=$('quotesStat'); if(!tb)return;
+  const openN=QUOTES_CACHE.filter(x=>x.status!=='取消').length;
+  const relN=QUOTES_CACHE.filter(x=>x.status==='取消').length;
+  if(stat) stat.textContent=`未解放 ${openN}件 / 解放済 ${relN}件`;
+  const items=QUOTES_CACHE.filter(it=> qFilter==='released' ? it.status==='取消' : it.status!=='取消');
+  tb.innerHTML = items.length ? items.map(it=>{
+    const cancelled=it.status==='取消';
+    const act = cancelled ? '<span class="hint">解放済</span>'
+      : `<button class="ghost sm qdel" data-qno="${esc(it.no)}" style="color:var(--warn)">❌ 解放</button>`;
+    return `<tr style="${cancelled?'opacity:.55':''}"><td class="l mono">${esc(it.no)}</td><td class="l">${esc(it.issued)}</td><td class="l">${esc(it.date)}</td><td class="l">${esc(it.tokui)} ${esc(it.tname)}</td><td class="l">${esc(it.kenmei)}</td><td class="l">${esc(it.status)}</td><td>${act}</td></tr>`;
+  }).join('') : `<tr><td colspan="7" class="hint" style="padding:8px">${qFilter==='released'?'解放済の番号はありません':'未解放の番号はありません'}</td></tr>`;
 }
 async function releaseQuoteNo(no){
   if(!confirm(`見積番号 ${no} を解放しますか？\nこの番号は次回の採番で再利用されます。\n※すでに弥生へ取り込んだ番号は解放しないでください。`)) return;
@@ -1488,7 +1522,8 @@ async function releaseQuoteNo(no){
   }catch(err){ toastDone('解放に失敗（通信エラー）'); }
 }
 (function(){ const reload=$('quotesReload'); if(reload)reload.addEventListener('click',loadQuoteList);
-  const tb=$('quotesRows'); if(tb)tb.addEventListener('click',e=>{ const b=e.target.closest('[data-qno]'); if(b)releaseQuoteNo(b.dataset.qno); }); })();
+  const tb=$('quotesRows'); if(tb)tb.addEventListener('click',e=>{ const b=e.target.closest('[data-qno]'); if(b)releaseQuoteNo(b.dataset.qno); });
+  document.querySelectorAll('.qtab').forEach(b=>b.addEventListener('click',()=>{ qFilter=b.dataset.qtab; document.querySelectorAll('.qtab').forEach(x=>x.classList.toggle('on',x===b)); renderQuoteRows(); })); })();
 
 // 見積番号の「次の番号（目安）」を②に表示（消費しない）
 async function peekQuoteNo(){
@@ -1657,11 +1692,14 @@ HKEYS.forEach(k=>{ const e=$(k); if(e)e.addEventListener('input',saveDraft); });
 loadDrafts(); bindDrafts(); renderDraftList(); setToday(); peekQuoteNo();
 LINES=[]; render();   // 起動時は空。続き一覧から選ぶかPDFを読み込む
 showStep(1);
-loadProfilesGAS();   // GASに共有プリセットがあれば上書き
-loadFormatsGAS();    // 登録済みの仕入先書式を読み込む
-loadLearnedGAS();    // 名寄せ学習データを読み込む
-loadAllMaster().then(()=>{ const e=$('masterLoadStat'); if(e)e.textContent=ALLMASTER.length?`商品マスタ ${ALLMASTER.length}件 検索可`:'';
-  setMasterStat(MASTER_FROM_SHEET?`スプレッドシート商品台帳：${ALLMASTER.length}件 使用中`:`内蔵マスタ使用中（${ALLMASTER.length}件）`); }); // 検索用マスタ＋状態表示
-loadAllTokui().then(()=>{ populateTokuiLists(); const e=$('tokuiStat'); if(e)e.textContent=ALLTOKUI.length?`得意先 ${ALLTOKUI.length}件 検索可`:'（得意先台帳が未登録。管理→得意先台帳マスタで取り込み）'; const st=$('tokuiMasterStat'); if(st&&ALLTOKUI.length)st.textContent=`登録済み：${ALLTOKUI.length}件`; }); // 得意先マスタ
-loadAllTanto().then(()=>{ fillTantoSelect(); syncTantoFromProfile(); const st=$('tantoMasterStat'); if(st&&TANTO.length)st.textContent=`登録済み：${TANTO.length}件`; }); // 担当者マスタ（GASがあれば上書き）
+showLoading('読み込み中…');   // 起動時のマスタ取得が終わるまで操作をブロック
+Promise.allSettled([
+  loadProfilesGAS(),   // GASに共有プリセットがあれば上書き
+  loadFormatsGAS(),    // 登録済みの仕入先書式を読み込む
+  loadLearnedGAS(),    // 名寄せ学習データを読み込む
+  loadAllMaster().then(()=>{ const e=$('masterLoadStat'); if(e)e.textContent=ALLMASTER.length?`商品マスタ ${ALLMASTER.length}件 検索可`:'';
+    setMasterStat(MASTER_FROM_SHEET?`スプレッドシート商品台帳：${ALLMASTER.length}件 使用中`:`内蔵マスタ使用中（${ALLMASTER.length}件）`); }), // 検索用マスタ＋状態表示
+  loadAllTokui().then(()=>{ populateTokuiLists(); const e=$('tokuiStat'); if(e)e.textContent=ALLTOKUI.length?`得意先 ${ALLTOKUI.length}件 検索可`:'（得意先台帳が未登録。管理→得意先台帳マスタで取り込み）'; const st=$('tokuiMasterStat'); if(st&&ALLTOKUI.length)st.textContent=`登録済み：${ALLTOKUI.length}件`; }), // 得意先マスタ
+  loadAllTanto().then(()=>{ fillTantoSelect(); syncTantoFromProfile(); const st=$('tantoMasterStat'); if(st&&TANTO.length)st.textContent=`登録済み：${TANTO.length}件`; }), // 担当者マスタ（GASがあれば上書き）
+]).then(()=>hideLoading());
 </script>
