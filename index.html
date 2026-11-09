@@ -64,6 +64,7 @@
   @keyframes pop{from{transform:scale(.6);opacity:0}to{transform:scale(1);opacity:1}}
 
   .tablewrap{overflow-x:auto;border:1px solid var(--line);border-radius:10px}
+  .itemtable td:last-child,.itemtable th:last-child{position:sticky;right:0;background:var(--surface);z-index:2;box-shadow:-6px 0 6px -5px rgba(0,0,0,.18)}
   table{width:100%;border-collapse:collapse;font-size:.83rem;min-width:860px;font-variant-numeric:tabular-nums}
   th,td{padding:7px 9px;border-bottom:1px solid var(--line);text-align:right;white-space:nowrap;vertical-align:top}
   th{background:var(--head);font-size:.68rem;letter-spacing:.02em;color:var(--muted);font-weight:700;position:sticky;top:env(safe-area-inset-top,0px)}
@@ -353,7 +354,7 @@
       <div id="msResults" style="margin-top:8px;max-height:280px;overflow:auto"></div>
     </div>
     <div class="tablewrap">
-      <table>
+      <table class="itemtable">
         <thead><tr>
           <th class="l">区分</th><th class="l">品名／規格</th><th>数量</th><th>単位</th>
           <th>原単価</th><th>ﾏｰｼﾞﾝ%</th><th class="sell">売単価</th><th class="sell">売金額</th>
@@ -438,8 +439,13 @@
       <p class="hint" style="margin-top:0">見積PDFを読み込むと列（品名・数量・単位・単価・金額）を自動で推測します。ズレていたら、下の数値入力で微調整するか、PDF上の線をドラッグしてください。会社名を付けて保存すると、次回からそのPDFを自動判別して読みます。</p>
       <div class="row" style="margin-top:10px">
         <div class="f"><label>会社名（仕入先）</label><input class="m" id="fmtName" placeholder="例：常宏"></div>
-        <span class="filebtn"><button type="button">見積PDFを読み込む</button><input type="file" id="fmtPdf" accept="application/pdf"></span>
         <button type="button" id="fmtSave">この書式を保存</button>
+      </div>
+      <div id="fmtDrop" class="dropzone" style="margin-top:10px;padding:16px">
+        <div class="dz-ico" style="font-size:20px">⬆</div>
+        <div class="dz-main" style="font-size:13px">見積PDFをドラッグ＆ドロップ</div>
+        <div class="dz-sub">またはクリックして選択</div>
+        <input type="file" id="fmtPdf" accept="application/pdf" hidden>
       </div>
       <p class="hint" id="fmtMsg"></p>
       <div id="fmtStage" hidden style="margin-top:12px">
@@ -1240,34 +1246,43 @@ async function learnCurrent(){
 // 汎用解析（列位置に頼らず「単位＋数字」の並びで拾う。未知の書式向け）
 // ・全角数字＋字間空白のトークン（例「２ ６ ８ ０ ０」）に対応（nz正規化）
 // ・単位の後ろが「定価 単価 金額」の3値でも、金額の直前＝単価（＝仕入）を採用
-const UNITS=['組','枚','台','本','個','式','ｍ3','ｍ2','m3','m2','平方ｍ','平方m','kg','ｋｇ','袋','缶','箱','巻','ｾｯﾄ','ｍ','m','ℓ','L','冊'];
+const UNITS=['組','枚','台','本','個','式','ｍ3','ｍ2','m3','m2','平方ｍ','平方m','kg','ｋｇ','袋','缶','箱','巻','ｾｯﾄ','セット','ｍ','m','ℓ','L','冊','㎡','㎥','㎝','回','ケ','ヶ','面','列','基','対','束','枚数','本数'];
 const SEC_NOISE=/以下余白|特記事項|^頁$|^No|小計|^合計|^以下$|^余白$/;
 // 先頭の行番号(単独数字)だけ落とし、残り（数字含む）を連結した行テキスト
 function lineText(toks){ const t=toks.slice(); if(t.length&&/^[\d,]+$/.test(t[0]))t.shift(); return t.filter(x=>UNITS.indexOf(x)<0).join(''); }
 function parseGeneric(words){
   const out=[]; const rows=clusterRows(words); let buf='',started=false;
-  const isNum=t=>/^[\d,]+$/.test(t);
+  const isNum=t=>/^[\d,]+(\.\d+)?$/.test(t);              // 小数の数量も許可
+  const numv=t=>parseFloat(String(t).replace(/,/g,''));
   const flushSec=()=>{ if(buf&&!SEC_NOISE.test(buf)&&buf.length>=3) out.push(['sec',buf,'',0,0]); buf=''; };
+  // 単位判定：単位そのもの、または「数値＋単位」が1トークンに結合（例 "26.00本" "390㎡"）
+  const unitInfo=t=>{ if(UNITS.indexOf(t)>=0) return {unit:t,qtyInTok:null};
+    const m=t.match(/^([\d,]+(?:\.\d+)?)([^\d,.][^\d,]*)$/); if(m&&UNITS.indexOf(m[2])>=0) return {unit:m[2],qtyInTok:m[1]}; return null; };
   for(const r of rows){
     const toks=r.items.slice().sort((a,b)=>a.x0-b.x0).map(w=>nz(w.text));
     const joined=toks.join('');
     if(!started){ if(joined.includes('数量')&&(joined.includes('単価')||joined.includes('金額')))started=true; continue; }
     if(joined.includes('合計')||/^\d+\/\d+$/.test(joined)){ flushSec(); continue; }
-    const ui=toks.findIndex(t=>UNITS.indexOf(t)>=0);
+    let ui=-1,uinfo=null;
+    for(let k=0;k<toks.length;k++){ const info=unitInfo(toks[k]); if(info){ui=k;uinfo=info;break;} }
     if(ui>=0){
-      const before=toks.slice(0,ui).filter(isNum), after=toks.slice(ui+1).filter(isNum);
-      if(after.length&&before.length){
-        const qty=parseInt(before[before.length-1].replace(/,/g,''));
-        let cost;
-        if(after.length>=2){ const c2=parseInt(after[after.length-2].replace(/,/g,'')), amt=parseInt(after[after.length-1].replace(/,/g,''));
-          // 金額＝数量×単価 が合えば「金額の直前＝単価」を採用（定価列を除外）、合わなければ先頭
-          cost=(qty>0&&Math.abs(qty*c2-amt)<=Math.max(2,amt*0.001))?c2:parseInt(after[0].replace(/,/g,'')); }
-        else cost=parseInt(after[0].replace(/,/g,''));
-        const np=toks.slice(0,ui).filter(t=>!isNum(t)).join('');
-        const name=(buf+' '+np).replace(/\s+/g,' ').trim();   // 直前の品名行＋当行＝品名
-        if(cost>0&&qty>0&&name.length>=2) out.push(['item',name,toks[ui],qty,cost]);
-        buf=''; continue;
-      }
+      const before=toks.slice(0,ui).filter(isNum);   // 単位より前の数
+      const after=toks.slice(ui+1).filter(isNum);     // 単位より後の数
+      // 数量：結合トークン内 ＞ 単位の直前（数量 単位…）＞ 単位の直後（単位 数量…）
+      let qty=null;
+      if(uinfo.qtyInTok!=null) qty=numv(uinfo.qtyInTok);
+      else if(before.length) qty=numv(before[before.length-1]);
+      else if(after.length) qty=numv(after[0]);
+      // 単価候補：数量が前or結合なら after 全部、数量が後なら after先頭(=数量)を除く
+      const tail=(uinfo.qtyInTok!=null||before.length)?after:after.slice(1);
+      let cost=null;
+      if(tail.length>=2){ const c2=numv(tail[tail.length-2]),a=numv(tail[tail.length-1]);
+        // 金額＝数量×単価 が合えば「金額の直前＝単価」（定価列を除外）、合わなければ先頭
+        cost=(qty>0&&Math.abs(qty*c2-a)<=Math.max(2,a*0.002))?c2:numv(tail[0]); }
+      else if(tail.length===1) cost=numv(tail[0]);
+      const np=toks.slice(0,ui).filter(t=>!isNum(t)&&!unitInfo(t)).join('');
+      const name=(buf+' '+np).replace(/\s+/g,' ').trim();   // 直前の品名行＋当行＝品名
+      if(cost>0&&qty>0&&name.length>=2){ out.push(['item',name,uinfo.unit,qty,cost]); buf=''; continue; }
     }
     // 数字のない文字行。次が明細行なら品名、そうでなければ摘要として取り込む
     const txt=lineText(toks);
@@ -1637,6 +1652,11 @@ function promptRange(){ const k=rangeSeq[rangeIdx];
   $('fmtRangeHint').innerHTML=`<b>範囲指定（${rangeIdx+1}/${rangeSeq.length}）：</b>「<b style="color:var(--accent)">${COL_LABEL[k]}</b>」の列を横方向にドラッグで囲んでください`; }
 function bindFormatTab(){
   $('fmtPdf').addEventListener('change',e=>{ const f=e.target.files[0]; if(f)fmtLoadPdf(f); e.target.value=''; });
+  (function(){ const dz=$('fmtDrop'); if(!dz)return;
+    dz.addEventListener('click',()=>$('fmtPdf').click());
+    ['dragenter','dragover'].forEach(ev=>dz.addEventListener(ev,e=>{e.preventDefault();e.stopPropagation();dz.classList.add('drag');}));
+    ['dragleave','dragend'].forEach(ev=>dz.addEventListener(ev,e=>{e.preventDefault();e.stopPropagation();dz.classList.remove('drag');}));
+    dz.addEventListener('drop',e=>{e.preventDefault();e.stopPropagation();dz.classList.remove('drag'); const f=e.dataTransfer&&e.dataTransfer.files&&e.dataTransfer.files[0]; if(f&&/\.pdf$/i.test(f.name||'')) fmtLoadPdf(f); }); })();
   $('fmtRangeStart').addEventListener('click',()=>startRange());
   document.querySelectorAll('[data-only]').forEach(b=>b.addEventListener('click',()=>startRange([b.dataset.only])));
   const inner=$('fmtStageInner'); const cv=$('fmtCanvas');
