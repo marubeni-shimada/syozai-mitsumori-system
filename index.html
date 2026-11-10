@@ -65,8 +65,12 @@
 
   .tablewrap{overflow-x:auto;border:1px solid var(--line);border-radius:10px}
   .itemtable td:last-child,.itemtable th:last-child{position:sticky;right:0;background:var(--surface);z-index:2;box-shadow:-6px 0 6px -5px rgba(0,0,0,.18)}
-  #msInlineBox{position:fixed;z-index:9998;max-height:260px;overflow:auto;background:var(--surface);border:1px solid var(--line);border-radius:8px;box-shadow:0 10px 28px rgba(0,0,0,.24);display:none}
-  .msi-row{padding:6px 9px;border-bottom:1px solid var(--line);cursor:pointer;font-size:.82rem;white-space:nowrap}
+  .mschip{border:1px solid var(--line);background:var(--bg);color:var(--fg);padding:4px 10px;border-radius:7px;cursor:pointer;font-size:.82rem;max-width:230px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;text-align:left;vertical-align:middle}
+  .mschip:hover{border-color:var(--accent);color:var(--accent)}
+  #msInlineBox{position:fixed;z-index:9998;background:var(--surface);border:1px solid var(--line);border-radius:10px;box-shadow:0 12px 30px rgba(0,0,0,.26);display:none;overflow:hidden}
+  #msInlineQ{width:100%;border:0;border-bottom:1px solid var(--line);padding:9px 11px;font-size:.86rem;outline:none;background:var(--surface);color:var(--fg);box-sizing:border-box}
+  #msInlineList{max-height:240px;overflow:auto}
+  .msi-row{padding:7px 10px;border-bottom:1px solid var(--line);cursor:pointer;font-size:.82rem;white-space:nowrap}
   .msi-row:hover{background:var(--accent-soft)}
   table{width:100%;border-collapse:collapse;font-size:.83rem;min-width:860px;font-variant-numeric:tabular-nums}
   th,td{padding:7px 9px;border-bottom:1px solid var(--line);text-align:right;white-space:nowrap;vertical-align:top}
@@ -511,7 +515,7 @@
     <div class="stepnav"><button type="button" class="ghost" data-go="1">◀ 戻る</button><span></span></div>
   </section>
 </div>
-<div id="msInlineBox"></div>
+<div id="msInlineBox"><input id="msInlineQ" placeholder="品名・コードで検索" autocomplete="off"><div id="msInlineList"></div></div>
 <div id="loadingOverlay" hidden><div class="loadbox"><div class="loadspin"></div><div class="loadmsg" id="loadingMsg">読み込み中…</div></div></div>
 <div class="toast" id="toast"></div>
 
@@ -765,7 +769,7 @@ function render(animate){
       `<td><input class="celled" style="width:72px" data-i="${i}" data-k="cost" value="${l.cost}"></td>`+
       `<td><input class="celled" style="width:48px" data-i="${i}" data-k="margin" value="${l.margin}"></td>`+
       `<td class="sell" data-sell="${i}">${yen(sell)}</td><td class="sell" data-amt="${i}">${yen(amt)}</td>`+
-      `<td class="l">${tag} <input class="msinline" data-i="${i}" value="${l.code?esc(l.code+'｜'+codeName(l.code)):''}" placeholder="品名/コードで検索" autocomplete="off" style="min-width:160px"> <button class="msbtn" data-ms="${i}" title="別窓で検索">🔍</button></td>`+
+      `<td class="l">${tag} <button class="mschip" data-mschip="${i}" title="クリックで検索・選択">${l.code?esc(l.code+'｜'+codeName(l.code)):'<span class=\'hint\'>コードを選択 ▾</span>'}</button></td>`+
       `<td><button class="delrow" data-del="${i}">×</button></td>`;
     tb.appendChild(tr);
   });
@@ -856,10 +860,7 @@ $('rows').addEventListener('input',e=>{
     if(k==='qty'||k==='cost'||k==='margin'){l[k]=parseFloat(el.value)||0; recompute();}
     else{l[k]=el.value;}
   }
-  else if(el.classList.contains('msinline')){ openMsInline(el); }
 });
-$('rows').addEventListener('focusin',e=>{ if(e.target.classList&&e.target.classList.contains('msinline')){ e.target.select(); openMsInline(e.target); } });
-$('rows').addEventListener('focusout',e=>{ if(e.target.classList&&e.target.classList.contains('msinline')){ const el=e.target, l=LINES[+el.dataset.i]; if(l) setTimeout(()=>{ el.value=l.code?l.code+'｜'+codeName(l.code):''; },150); } });
 $('rows').addEventListener('change',e=>{
   const el=e.target;
   if(el.classList.contains('matchsel')){ const i=+el.dataset.code; LINES[i].code=el.value; recompute(); }
@@ -871,8 +872,9 @@ $('rows').addEventListener('change',e=>{
   }
 });
 $('rows').addEventListener('click',e=>{
-  if(e.target.dataset.del!==undefined){ LINES.splice(+e.target.dataset.del,1); render(); return; }
-  if(e.target.dataset.ms!==undefined){ openMasterSearch(+e.target.dataset.ms); }
+  const del=e.target.closest('[data-del]'); if(del){ LINES.splice(+del.dataset.del,1); render(); return; }
+  const chip=e.target.closest('[data-mschip]'); if(chip){ openMsInline(+chip.dataset.mschip, chip); return; }
+  const ms=e.target.closest('[data-ms]'); if(ms){ openMasterSearch(+ms.dataset.ms); }
 });
 function addEmptyRow(){ const l={kind:'item',name:'',qty:1,unit:'',cost:0,margin:curProfile().defMargin,roundUnit:curProfile().defUnit,roundMode:curProfile().defMode,code:'',cand:[],verdict:'new'};LINES.push(l);render(); }
 $('addRow').addEventListener('click',addEmptyRow);
@@ -894,28 +896,32 @@ async function loadAllMaster(){
 function searchMaster(q,k=30){ q=(q||'').trim(); if(!q)return [];
   const ts=q.split(/\s+/).filter(Boolean);
   return ALLMASTER.filter(m=>{ const hay=m.code+' '+m.name; return ts.every(t=>hay.includes(t)); }).slice(0,k); }
-// ===== 行内の商品検索（名寄せ欄で直接検索して選ぶ） =====
+// ===== 行内の商品検索（コードのチップをクリック→検索ボックスで選ぶ） =====
 function codeName(code){ if(!code)return''; const m=(ALLMASTER||[]).find(x=>x.code===code); return m?m.name:''; }
 let msInlineIdx=-1;
-function openMsInline(inp){ const box=$('msInlineBox'); if(!box)return; msInlineIdx=+inp.dataset.i;
-  const r=inp.getBoundingClientRect(); const w=Math.max(r.width,300);
-  box.style.width=w+'px'; box.style.left=Math.max(6,Math.min(r.left,window.innerWidth-w-6))+'px'; box.style.top=(r.bottom+2)+'px';
-  renderMsInline(inp); box.style.display='block'; }
-function renderMsInline(inp){ const idx=+inp.dataset.i, l=LINES[idx], box=$('msInlineBox'); if(!l||!box)return;
-  let q=(inp.value||'').trim(); const bar=q.indexOf('｜'); if(bar>=0) q=q.slice(bar+1); q=q.trim();
+function openMsInline(idx, anchor){ const box=$('msInlineBox'); if(!box)return; msInlineIdx=idx;
+  const r=anchor.getBoundingClientRect(); const w=340;
+  box.style.width=w+'px'; box.style.left=Math.max(6,Math.min(r.left,window.innerWidth-w-6))+'px'; box.style.top=(r.bottom+3)+'px';
+  const qi=$('msInlineQ'); qi.value=''; renderMsInlineList(); box.style.display='block'; setTimeout(()=>{ try{qi.focus({preventScroll:true});}catch(_){qi.focus();} },0); }
+function renderMsInlineList(){ const l=LINES[msInlineIdx], listEl=$('msInlineList'); if(!l||!listEl)return;
+  const q=($('msInlineQ').value||'').trim();
   const seen={}, list=[];
-  (l.cand||[]).forEach(c=>{ if(!seen[c.code]){seen[c.code]=1; list.push({code:c.code,name:c.name,cand:true});} });
+  (l.cand||[]).forEach(c=>{ if(c.code&&!seen[c.code]){seen[c.code]=1; list.push({code:c.code,name:c.name,cand:true});} });
   if(q) searchMaster(q,40).forEach(m=>{ if(!seen[m.code]){seen[m.code]=1; list.push({code:m.code,name:m.name});} });
   let html=`<div class="msi-row" data-mcode=""><b>— 新規登録（コードなし）—</b></div>`;
-  html+= list.length ? list.map(x=>`<div class="msi-row" data-mcode="${esc(x.code)}"><span class="mono" style="color:var(--accent);display:inline-block;min-width:46px">${esc(x.code)}</span> ${esc(x.name)}${x.cand?' <span class="hint">候補</span>':''}</div>`).join('') : (q?'<div class="hint" style="padding:6px 9px">該当なし</div>':'<div class="hint" style="padding:6px 9px">品名やコードを入力</div>');
-  box.innerHTML=html; }
+  html+= list.length ? list.map(x=>`<div class="msi-row" data-mcode="${esc(x.code)}"><span class="mono" style="color:var(--accent);display:inline-block;min-width:48px;font-weight:700">${esc(x.code)}</span> ${esc(x.name)}${x.cand?' <span class="hint">候補</span>':''}</div>`).join('') : (q?'<div class="hint" style="padding:7px 10px">該当なし</div>':'<div class="hint" style="padding:7px 10px">品名やコードを入力して検索</div>');
+  listEl.innerHTML=html; }
 function pickMsInline(code){ const l=LINES[msInlineIdx]; if(l){ l.code=code; l.verdict= code? (l.verdict==='learned'?'learned':'ok') : 'new';
     if(code && !(l.cand||[]).some(c=>c.code===code)){ (l.cand=l.cand||[]).unshift({code,name:codeName(code),unit:l.unit,s:99}); } }
-  const box=$('msInlineBox'); if(box)box.style.display='none'; msInlineIdx=-1; render(); }
+  closeMsInline(); render(); }
+function closeMsInline(){ const box=$('msInlineBox'); if(box)box.style.display='none'; msInlineIdx=-1; }
 document.addEventListener('mousedown',e=>{ const box=$('msInlineBox'); if(!box||box.style.display==='none')return;
-  if(box.contains(e.target)){ const r=e.target.closest('[data-mcode]'); if(r){ e.preventDefault(); pickMsInline(r.dataset.mcode); } return; }
-  if(!(e.target.classList&&e.target.classList.contains('msinline'))) box.style.display='none'; });
-window.addEventListener('scroll',()=>{ const box=$('msInlineBox'); if(box&&box.style.display!=='none') box.style.display='none'; }, true);
+  if(box.contains(e.target)) return;                         // ボックス内の操作は閉じない
+  if(e.target.closest&&e.target.closest('[data-mschip]')) return;   // チップ再クリックは別処理
+  closeMsInline(); });
+if($('msInlineQ')){ $('msInlineQ').addEventListener('input',renderMsInlineList);
+  $('msInlineQ').addEventListener('keydown',e=>{ if(e.key==='Escape')closeMsInline(); }); }
+if($('msInlineList')){ $('msInlineList').addEventListener('click',e=>{ const r=e.target.closest('[data-mcode]'); if(r)pickMsInline(r.dataset.mcode); }); }
 function renderMsResults(){
   const q=$('msQuery').value, list=searchMaster(q,30);
   $('msResults').innerHTML = list.length
