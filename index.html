@@ -376,6 +376,15 @@
       </table>
     </div>
     <p class="hint"><span class="tag learned">学習済</span> 前回の確定を適用　<span class="tag ok">一致</span> 自動採用　<span class="tag chk">要確認</span> 僅差・弱い一致　<span class="tag new">新規</span> 台帳に無し</p>
+    <div id="trashWrap" hidden style="margin-top:12px;border:1px dashed var(--line);border-radius:10px;padding:10px 12px;background:var(--bg)">
+      <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:6px">
+        <b style="font-size:.88rem">削除した行（戻せます）</b>
+        <span class="hint" id="trashCnt" style="margin:0"></span>
+        <button type="button" class="ghost sm" id="trashClear" style="margin-left:auto">リストを空にする</button>
+      </div>
+      <div class="tablewrap"><table style="min-width:520px"><thead><tr><th class="l">品名／摘要</th><th>数量</th><th>単位</th><th>原単価</th><th class="l">会社</th><th></th></tr></thead><tbody id="trashRows"></tbody></table></div>
+      <p class="hint" style="margin:7px 0 0">※ ブラウザを閉じる・リロードすると消えます。エクスポート時と新しい見積を始めたときにも空になります。</p>
+    </div>
   </div>
 
   <!-- ④ 合計 -->
@@ -420,8 +429,10 @@
     <div class="row">
       <button type="button" id="dlCsv">取込ファイルをダウンロード</button>
       <button type="button" class="ghost" id="copyCsv">コピー</button>
+      <label class="hint" style="display:inline-flex;align-items:center;gap:6px;margin:0;cursor:pointer"><input type="checkbox" id="learnOn" style="margin:0"> 学習する（品名→コードを次回に引き継ぐ）</label>
       <span class="hint" id="newWarn"></span>
     </div>
+    <p class="hint" id="learnState" style="margin:7px 0 0"></p>
     <p class="hint" style="margin-top:12px">下は生成される取込ファイルのプレビューです（内容確認用／Shift-JIS・.txtで保存されます）。</p>
     <pre class="csv" id="csvOut"></pre>
   </div>
@@ -842,12 +853,13 @@ function openDraft(id){
   curDraftId=d.id; curDraftName=d.name; curSupplier=d.supplier||''; LINES=d.lines;
   HKEYS.forEach(k=>{ if($(k)&&d.header&&d.header[k]!=null)$(k).value=d.header[k]; });
   setToday();   // 見積日は保存値ではなく常に今日
+  if(typeof trashClear==='function')trashClear();   // 別の見積に切り替えたら戻せる行は持ち越さない
   render(); showStep(2); toast(`「${d.name}」を再開`);
 }
 function removeDraft(id){ DRAFTS=DRAFTS.filter(d=>d.id!==id); persistDrafts(); renderDraftList(); }
-function newDraft(){ curDraftId=null; curDraftName=''; LINES=[]; if($('hNo'))$('hNo').value=''; setToday(); render(); renderDraftList(); toast('新規作成'); }
+function newDraft(){ curDraftId=null; curDraftName=''; LINES=[]; if($('hNo'))$('hNo').value=''; setToday(); if(typeof trashClear==='function')trashClear(); render(); renderDraftList(); toast('新規作成'); }
 // エクスポート完了時：現在の見積を一覧から消す
-function finishDraft(){ if(curDraftId){ removeDraft(curDraftId); curDraftId=null; curDraftName=''; } }
+function finishDraft(){ if(curDraftId){ removeDraft(curDraftId); curDraftId=null; curDraftName=''; } if(typeof trashClear==='function')trashClear(); }
 function bindDrafts(){
   $('clearDraft').addEventListener('click',newDraft);
   $('draftList').addEventListener('click',e=>{
@@ -877,18 +889,43 @@ $('rows').addEventListener('change',e=>{
     render(); saveDraft();
   }
 });
+// ===== 削除した行の置き場（下に表示して戻せる） =====
+let TRASH=[], trashSeq=0; const TRASH_MAX=10;
+function trashPush(l,idx){ TRASH.unshift({id:++trashSeq,l:l,idx:idx}); if(TRASH.length>TRASH_MAX)TRASH.length=TRASH_MAX; }
+function trashClear(){ TRASH=[]; renderTrash(); }
+function renderTrash(){
+  const w=$('trashWrap'); if(!w)return;
+  w.hidden = TRASH.length===0;
+  const c=$('trashCnt'); if(c)c.textContent=TRASH.length?TRASH.length+'件':'';
+  const tb=$('trashRows'); if(!tb)return;
+  tb.innerHTML=TRASH.map(t=>{ const l=t.l, sec=(l.kind==='sec');
+    const nm=sec?('【摘要】'+(l.name||'')):(l.name||'（品名なし）');
+    return `<tr><td class="l">${esc(nm)}</td><td>${sec?'':l.qty}</td><td>${esc(l.unit||'')}</td><td>${sec?'':Number(l.cost||0).toLocaleString()}</td><td class="l">${esc(l.supplier||'')}</td><td><button type="button" class="ghost sm" data-undel="${t.id}">戻す</button></td></tr>`;
+  }).join('');
+}
+function trashRestore(id){
+  const k=TRASH.findIndex(t=>t.id===id); if(k<0)return;
+  const t=TRASH.splice(k,1)[0];
+  LINES.splice(Math.max(0,Math.min(t.idx,LINES.length)),0,t.l);
+  renderTrash(); render(); saveDraft();
+}
+$('trashRows').addEventListener('click',e=>{ const b=e.target.closest('[data-undel]'); if(b)trashRestore(+b.dataset.undel); });
+$('trashClear').addEventListener('click',()=>{ if(TRASH.length&&confirm('戻せる行のリストを空にしますか？'))trashClear(); });
+
 $('rows').addEventListener('click',e=>{
   const sd=e.target.closest('[data-supdel]');
   if(sd){ const sup=sd.dataset.supdel||'';
     const n=LINES.filter(l=>(l.supplier||'')===sup).length;
-    if(confirm('「'+(sup||'（会社名なし）')+'」の明細 '+n+'件 をまとめて削除しますか？')){
+    if(confirm('「'+(sup||'（会社名なし）')+'」の明細 '+n+'件 をまとめて削除しますか？\n（この削除は元に戻せません）')){
       LINES=LINES.filter(l=>(l.supplier||'')!==sup); render(); saveDraft(); }
     return; }
   const ad=e.target.closest('[data-add]');
   if(ad){ const i=+ad.dataset.add, p=curProfile();
     LINES.splice(i+1,0,{kind:'item',name:'',qty:1,unit:'',cost:0,margin:p.defMargin,roundUnit:p.defUnit,roundMode:p.defMode,code:'',cand:[],verdict:'new',supplier:(LINES[i]&&LINES[i].supplier)||'',memo:''});
     render(); saveDraft(); return; }
-  const del=e.target.closest('[data-del]'); if(del){ LINES.splice(+del.dataset.del,1); render(); return; }
+  const del=e.target.closest('[data-del]');
+  if(del){ const i=+del.dataset.del; if(LINES[i])trashPush(LINES[i],i);
+    LINES.splice(i,1); renderTrash(); render(); return; }
   const chip=e.target.closest('[data-mschip]'); if(chip){ openMsInline(+chip.dataset.mschip, chip); return; }
   const ms=e.target.closest('[data-ms]'); if(ms){ openMasterSearch(+ms.dataset.ms); }
 });
@@ -1283,7 +1320,20 @@ function learnedCode(supplier,name){
   const m=LEARNED[supplier]; if(!m)return null; return m[NFKC(name)]||null;
 }
 // 確定した明細（仕入先＋品名→コード）をGASに覚えさせる（複数仕入先に対応・明細ごとの仕入先で学習）
+// 学習ON/OFF（端末ごとに保存。既定はOFF＝テスト中に誤学習させない）
+const LEARN_KEY='mitsumori_learn_on';
+const learnEnabled=()=>{ const c=$('learnOn'); return !!(c&&c.checked); };
+function setLearnState(){ const e=$('learnState'); if(!e)return;
+  e.innerHTML = learnEnabled()
+    ? '学習オン：コードが入った明細を「仕入先＋品名→コード」として保存し、次回から自動で入ります。'
+    : '<b>学習オフ</b>：コードを選んでエクスポートしても保存されません（テスト向け）。'; }
+function initLearnSwitch(){ const c=$('learnOn'); if(!c)return;
+  try{ c.checked = localStorage.getItem(LEARN_KEY)==='1'; }catch(_){ c.checked=false; }
+  c.addEventListener('change',()=>{ try{ localStorage.setItem(LEARN_KEY, c.checked?'1':'0'); }catch(_){} setLearnState(); });
+  setLearnState(); }
+
 async function learnCurrent(){
+  if(!learnEnabled())return;   // 学習オフなら何も保存しない
   if(!GAS_URL)return;
   const bySup={};
   LINES.filter(l=>l.kind==='item'&&l.code).forEach(l=>{ const s=l.supplier||curSupplier; if(!s)return; (bySup[s]=bySup[s]||[]).push({name:l.name,code:String(l.code)}); });
@@ -1786,7 +1836,7 @@ fillTantoSelect();            // 担当者コードのプルダウン
 syncTantoFromProfile();       // この端末の担当者に合わせて担当者コードを初期反映
 // 作業中データ（続きから）
 HKEYS.forEach(k=>{ const e=$(k); if(e)e.addEventListener('input',saveDraft); });
-loadDrafts(); bindDrafts(); renderDraftList(); setToday(); peekQuoteNo();
+loadDrafts(); bindDrafts(); renderDraftList(); setToday(); peekQuoteNo(); initLearnSwitch();
 LINES=[]; render();   // 起動時は空。続き一覧から選ぶかPDFを読み込む
 showStep(1);
 showLoading('読み込み中…');   // 起動時のマスタ取得が終わるまで操作をブロック
