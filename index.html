@@ -1141,21 +1141,25 @@ async function parsePdfFile(file){
     PAGES.push(words);
   }
   const fsel=$('readFormat');
-  let fmt=fsel&&fsel.value!==''?FORMATS[+fsel.value]:matchFormat(PAGES[0]);
+  let fmt=null, fmtTel='', manual=false;
+  if(fsel&&fsel.value!==''){ fmt=FORMATS[+fsel.value]; manual=true; }
+  else { const r=matchFormatTel(PAGES[0]); fmt=r.fmt; fmtTel=r.tel; }
   let mode='', parsed=[];
   const run=cols=>{ let a=[]; PAGES.forEach(w=>{a=a.concat(parsePage(w,cols));}); return a; };
-  if(fmt){ parsed=run(fmt.cols); mode=fmt.name+'（自動判別）'; }
+  if(fmt){ parsed=run(fmt.cols); mode=fmt.name+(manual?'（書式を手動指定）':'（自動判別：TEL '+(fmtTel||'—')+' が一致）'); }
   else{ parsed=run(null); mode='既定様式';
     if(!parsed.some(r=>r[0]==='item')){ const c=detectCols(PAGES[0]); if(c){ parsed=run(c); mode='自動推測'; } } }
   let generic=false;
   if(!parsed.some(r=>r[0]==='item')){ parsed=[]; PAGES.forEach(w=>{parsed=parsed.concat(parseGeneric(w));}); generic=true; mode='汎用'; }
-  return {parsed,fmt,mode,generic,supplier:fmt?fmt.name:''};
+  return {parsed,fmt,mode,generic,supplier:fmt?fmt.name:detectSupplierName(PAGES[0])};
 }
-// 仕入先名を確定（自動判別できなければ会社名を入力。空ならファイル名）
+// 仕入先名を確定（自動判別できなければ会社名を入力。既定値はファイル名から推測）
 function askSupplier(detected,file){
   if(detected) return detected;
-  const base=((file&&file.name)||'').replace(/\.pdf$/i,'');
-  const v=prompt('この仕入先（会社名）を入力してください',base);
+  const nm=((file&&file.name)||'').replace(/\.pdf$/i,'');
+  const toks=nm.split(/[_\-\s　]+/).filter(t=>t&&!/^\d+$/.test(t));
+  const base=(toks[0]||nm).replace(/(御?見積書?|見積り?)$/,'');
+  const v=prompt('この仕入先（会社名）を入力してください\n※PDFに会社名と電話番号が文字で入っていないと自動判別できません',base);
   return (v&&v.trim())||base||'仕入先';
 }
 // 新規読込（複数ファイル可。1枚目＝入れ替え、2枚目以降＝追記＝複数仕入先を1見積に）
@@ -1270,15 +1274,45 @@ function parsePage(words, cols){
 
 // PDFから電話番号（発行元の目印）を抽出
 function telDigits(words){
-  const t=(words||[]).map(w=>w.text).join(' ');
-  // 区切り（ハイフン等）必須で電話番号だけ拾う（見積Noなど区切り無しの数字は除外）
-  const m=t.match(/0\d{1,3}[-‐－]\d{2,4}[-‐－]?\d{3,4}/g)||[];
-  return [...new Set(m.map(x=>x.replace(/[-‐－\s]/g,'')))].filter(x=>x.length>=10);
+  const items=(words||[]).map(w=>w.text||'');
+  const norm=t=>{ try{t=t.normalize('NFKC');}catch(_){} return t.replace(/[‐－―−]/g,'-'); };
+  // ① TEL/FAX の見出しを頼りに拾う（全角・括弧区切り・1文字ずつバラけたPDFにも対応）
+  const byKw=t=>{ const s=norm(t).replace(/\s+/g,''); const o=[]; const re=/(?:TEL|FAX|Tel|Fax|電話)[^0-9]{0,3}(0[\d\-()]{8,15})/g; let m;
+    while((m=re.exec(s))){ const d=m[1].replace(/[^\d]/g,''); if(d.length>=10&&d.length<=11)o.push(d); } return o; };
+  // ② 見出しが無い場合だけ、番号の形で拾う
+  const byPat=t=>{ const s=norm(t).replace(/[()]/g,'-');
+    return (s.match(/0\d{1,3}-\d{2,4}-?\d{3,4}/g)||[]).map(x=>x.replace(/-/g,'')).filter(x=>x.length>=10&&x.length<=11); };
+  const sp=items.join(' '), gl=items.join('');
+  let a=[...new Set(byKw(sp).concat(byKw(gl)))];
+  if(!a.length) a=[...new Set(byPat(sp).concat(byPat(gl)))];
+  return a;
 }
-// 登録済み書式の中から、PDFの電話番号で会社を自動判別
-function matchFormat(words){
-  const tels=telDigits(words); if(!tels.length)return null;
-  return FORMATS.find(f=>Array.isArray(f.sig)&&f.sig.some(s=>tels.includes(s)))||null;
+// 登録済み書式の中から、PDFの電話番号で会社を自動判別（一致した番号も返す）
+function matchFormatTel(words){
+  const tels=telDigits(words); if(!tels.length)return {fmt:null,tel:''};
+  const f=FORMATS.find(f=>Array.isArray(f.sig)&&f.sig.some(s=>tels.includes(s)));
+  return {fmt:f||null, tel:f?(f.sig.find(s=>tels.includes(s))||''):''};
+}
+function matchFormat(words){ return matchFormatTel(words).fmt; }
+// 書式が未登録でも、PDF本文から発行元の会社名を拾う（宛先の自社名は除外）
+function detectSupplierName(words){
+  const kw=/(株式会社|有限会社|合同会社|㈱|㈲)/;
+  for(const w of (words||[])){
+    let t=String(w.text||'').trim(); if(!kw.test(t))continue;
+    if(/丸紅/.test(t))continue;                      // 宛先（自社）は除外
+    t=t.replace(/\s+/g,'').replace(/(御中|様)$/,'');
+    if(t.replace(kw,'').length<1)continue;           // 「株式会社」だけの断片は除外
+    return normSupplierName(t);
+  }
+  return '';
+}
+// 過去に使った仕入先名に表記を寄せる（株式会社常宏 → 常宏）
+function normSupplierName(n){
+  if(!n)return n;
+  const known=[...new Set(FORMATS.map(f=>f.name).concat(Object.keys(LEARNED||{})))].filter(Boolean);
+  const strip=s=>NFKC(String(s)).replace(/(株式会社|有限会社|合同会社|㈱|㈲|\(株\)|\(有\))/g,'').replace(/\s/g,'');
+  const k=strip(n); if(!k)return n;
+  return known.find(x=>{ const s=strip(x); return s&&(s===k||k.indexOf(s)>=0||s.indexOf(k)>=0); })||n;
 }
 
 // ヘッダ行（品名/数量/単位/単価/金額）から列位置を自動推測
