@@ -90,6 +90,11 @@
   .rangein:focus{border-color:var(--accent);outline:none;box-shadow:0 0 0 2px #2f6fb022}
   .rangein::placeholder{color:#9aa3ad}
   .delrow{border-color:var(--line);background:transparent;color:var(--muted);padding:2px 7px;font-size:.8rem}
+  .addrow{border-color:var(--line);background:transparent;color:var(--muted);padding:2px 7px;font-size:.8rem;margin-right:3px}
+  .addrow:hover{border-color:var(--accent);color:var(--accent)}
+  tr.warnrow td{background:var(--warn-soft)}
+  tr.warnrow td:last-child{background:var(--warn-soft)}
+  tr.warnrow td:first-child{box-shadow:inset 3px 0 0 var(--warn)}
 
   .totals{display:flex;flex-wrap:wrap;gap:12px}
   .tc{flex:1 1 150px;background:var(--bg);border:1px solid var(--line);border-radius:10px;padding:11px 14px}
@@ -753,7 +758,7 @@ function render(animate){
     if(animate){ tr.classList.add('enter'); tr.style.animationDelay=(i*0.035)+'s'; }
     if(l.kind==='sec'){ tr.className='sec';
       if(animate){ tr.classList.add('enter'); tr.style.animationDelay=(i*0.035)+'s'; }
-      tr.innerHTML=`<td>摘要</td><td class="l" colspan="7"><input class="celled" data-i="${i}" data-k="name" value="${esc(l.name)}"></td><td></td><td><button class="delrow" data-del="${i}">×</button></td>`;
+      tr.innerHTML=`<td>摘要</td><td class="l" colspan="7"><input class="celled" data-i="${i}" data-k="name" value="${esc(l.name)}"></td><td></td><td><button class="addrow" data-add="${i}" title="この下に1行追加">＋</button><button class="delrow" data-del="${i}">×</button></td>`;
       tb.appendChild(tr); return; }
     ni++;
     const sell=lineSell(l), amt=sell*l.qty; tc+=l.cost*l.qty; ts+=amt;
@@ -770,7 +775,8 @@ function render(animate){
       `<td><input class="celled" style="width:48px" data-i="${i}" data-k="margin" value="${l.margin}"></td>`+
       `<td class="sell" data-sell="${i}">${yen(sell)}</td><td class="sell" data-amt="${i}">${yen(amt)}</td>`+
       `<td class="l">${tag} <button class="mschip" data-mschip="${i}" title="クリックで検索・選択">${l.code?esc(l.code+'｜'+codeName(l.code)):'<span class=\'hint\'>コードを選択 ▾</span>'}</button></td>`+
-      `<td><button class="delrow" data-del="${i}">×</button></td>`;
+      `<td><button class="addrow" data-add="${i}" title="この下に1行追加">＋</button><button class="delrow" data-del="${i}">×</button></td>`;
+    if(String(l.unit||'').trim()==='回'){ tr.classList.add('warnrow'); tr.title='単位が「回」の行です（運搬費・経費など要確認）'; }
     tb.appendChild(tr);
   });
   setTotals(tc,ts,nm,ni,newList);
@@ -878,6 +884,10 @@ $('rows').addEventListener('click',e=>{
     if(confirm('「'+(sup||'（会社名なし）')+'」の明細 '+n+'件 をまとめて削除しますか？')){
       LINES=LINES.filter(l=>(l.supplier||'')!==sup); render(); saveDraft(); }
     return; }
+  const ad=e.target.closest('[data-add]');
+  if(ad){ const i=+ad.dataset.add, p=curProfile();
+    LINES.splice(i+1,0,{kind:'item',name:'',qty:1,unit:'',cost:0,margin:p.defMargin,roundUnit:p.defUnit,roundMode:p.defMode,code:'',cand:[],verdict:'new',supplier:(LINES[i]&&LINES[i].supplier)||'',memo:''});
+    render(); saveDraft(); return; }
   const del=e.target.closest('[data-del]'); if(del){ LINES.splice(+del.dataset.del,1); render(); return; }
   const chip=e.target.closest('[data-mschip]'); if(chip){ openMsInline(+chip.dataset.mschip, chip); return; }
   const ms=e.target.closest('[data-ms]'); if(ms){ openMasterSearch(+ms.dataset.ms); }
