@@ -497,6 +497,23 @@
       <div class="tablewrap"><table style="min-width:420px"><thead><tr><th class="l">会社名</th><th class="l">列位置(品/数/単位/単価/金額)</th><th></th></tr></thead><tbody id="fmtList"></tbody></table></div>
     </div>
 
+    <div class="card">
+      <h2>ラベルの言い回し（件名・納入場所・有効期限）</h2>
+      <p class="hint" style="margin-top:0">PDFから件名・納入場所・有効期限を拾うときに探す言葉です。書式登録とは無関係に全社へ効くので、拾えないPDFが出たらその会社の言い回しをここに足してください。読点・カンマ・改行のどれで区切ってもかまいません。</p>
+      <div class="row" style="margin-top:8px">
+        <div class="f" style="flex:1 1 260px"><label>件名として探す言葉</label><input class="m" id="lbKenmei" placeholder="件名, 工事名, 現場名"></div>
+        <div class="f" style="flex:1 1 260px"><label>納入場所として探す言葉</label><input class="m" id="lbNohin" placeholder="納入場所, 納品場所, 納入先"></div>
+        <div class="f" style="flex:1 1 260px"><label>有効期限として探す言葉</label><input class="m" id="lbYuko" placeholder="有効期限, 見積有効期限"></div>
+      </div>
+      <div class="row" style="margin-top:8px;align-items:center">
+        <button type="button" id="lbSave">この言い回しを保存（全PC共通）</button>
+        <button type="button" class="ghost sm" id="lbReset">既定に戻す</button>
+        <span class="hint" id="lbMsg" style="margin:0"></span>
+      </div>
+      <p class="hint" style="margin-top:8px">読み込み中のPDFがあれば、保存後に「この言い回しで試す」で結果を確認できます。</p>
+      <div class="row"><button type="button" class="ghost sm" id="lbTest">この言い回しで試す（読み込み済みPDF）</button><span class="hint" id="lbTestOut" style="margin:0"></span></div>
+    </div>
+
     <div class="card admin-only" hidden>
       <h2>バックアップ</h2>
       <p class="hint" style="margin-top:0">書式・条件プリセット・名寄せ学習をまとめて1つのファイルに書き出せます。万一データが消えても、このファイルを読み込めば復元できます。ときどき書き出して手元に保存しておくと安心です。</p>
@@ -1151,7 +1168,15 @@ async function parsePdfFile(file){
     if(!parsed.some(r=>r[0]==='item')){ const c=detectCols(PAGES[0]); if(c){ parsed=run(c); mode='自動推測'; } } }
   let generic=false;
   if(!parsed.some(r=>r[0]==='item')){ parsed=[]; PAGES.forEach(w=>{parsed=parsed.concat(parseGeneric(w));}); generic=true; mode='汎用'; }
-  return {parsed,fmt,mode,generic,supplier:fmt?fmt.name:detectSupplierName(PAGES[0])};
+  return {parsed,fmt,mode,generic,supplier:fmt?fmt.name:detectSupplierName(PAGES[0]),hdr:extractHeader(PAGES[0])};
+}
+// 1枚目のPDFから拾ったヘッダを②の入力欄へ（拾えた項目だけ入れる）
+function applyPdfHeader(hdr){
+  if(!hdr)return [];
+  const map={kenmei:'hKenmei',nohin:'hNohin',yuko:'hYuko'}, got=[];
+  for(const k in map){ const el=$(map[k]); if(el&&hdr[k]){ el.value=hdr[k]; got.push(hdr[k]); } }
+  if(got.length)saveDraft();
+  return got;
 }
 // 仕入先名を確定（自動判別できなければ会社名を入力。既定値はファイル名から推測）
 function askSupplier(detected,file){
@@ -1171,7 +1196,7 @@ async function processPdfFiles(fileList){
     for(const file of files){
       if(!/\.pdf$/i.test(file.name||'')){ continue; }   // PDF以外は無視
       let res; try{ res=await parsePdfFile(file); }catch(err){ console.error(err); continue; }
-      const {parsed,fmt,supplier}=res;
+      const {parsed,fmt,supplier,hdr}=res;
       if(!parsed.some(r=>r[0]==='item')) continue;
       const sup=askSupplier(supplier,file);   // 自動判別できなければ会社名を入力
       if(!replaced){
@@ -1179,6 +1204,7 @@ async function processPdfFiles(fileList){
         if($('hNo'))$('hNo').value='';   // 新しい見積＝番号リセット
         curSupplier=sup;
         if($('hSupplier')&&!$('hSupplier').value) $('hSupplier').value=sup;
+        applyPdfHeader(hdr);   // 件名・納入場所・有効期限は1枚目のPDFから
         loadLines(parsed,{supplier:sup,defer:true}); replaced=true;
       } else {
         curSupplier=sup;
@@ -1294,6 +1320,88 @@ function matchFormatTel(words){
   return {fmt:f||null, tel:f?(f.sig.find(s=>tels.includes(s))||''):''};
 }
 function matchFormat(words){ return matchFormatTel(words).fmt; }
+// ===== PDFヘッダの抽出（件名／納入場所／有効期限） =====
+// 行内の「ラベル：値」を拾う。値は次のラベル語が出たところで打ち切る
+const HDR_DEF_DEFAULT={
+  kenmei:['件名','工事名','現場名','物件名','工事場所'],
+  nohin :['納入場所','納品場所','納入先','受渡場所','納入地'],
+  yuko  :['見積有効期限','有効期限','有効期間','御見積有効期限'],
+};
+let HDR_DEF=JSON.parse(JSON.stringify(HDR_DEF_DEFAULT));   // 書式登録タブで追加・変更できる（全PC共通）
+// 値の打ち切り語：固定語＋その時のラベル語（ラベルを足すと自動で打ち切り語にもなる）
+const HDR_STOP_FIXED='担当者|弊社|本社|支店|営業所|TEL|FAX|電話|支払条件|御支払|納入期日|納期|見積No|見積番号|発行日|代理';
+function hdrStopRe(){
+  const labs=[].concat(HDR_DEF.kenmei||[],HDR_DEF.nohin||[],HDR_DEF.yuko||[])
+    .map(s=>String(s).replace(/[.*+?^${}()|[\]\\]/g,'\\$&')).filter(Boolean);
+  return new RegExp('('+HDR_STOP_FIXED+(labs.length?'|'+labs.join('|'):'')+')');
+}
+const hdrNorm=t=>{ let s=String(t||''); try{s=s.normalize('NFKC');}catch(_){} return s.replace(/\s+/g,'').replace(/[‐―−]/g,'-'); };
+function hdrRowText(words){   // 行ごとに、x順に連結した文字列を返す
+  return clusterRows(words).map(r=>hdrNorm(r.items.slice().sort((a,b)=>a.x0-b.x0).map(w=>w.text).join('')));
+}
+// ラベル言い回しの読み書き（全PC共通。スプレッドシート側に保存）
+const lbParse=s=>String(s||'').split(/[,、\n\r\t]+/).map(x=>hdrNorm(x)).filter(Boolean);
+const lbJoin=a=>(a||[]).join('、');
+function lbFillInputs(){ const m={kenmei:'lbKenmei',nohin:'lbNohin',yuko:'lbYuko'};
+  for(const k in m){ const el=$(m[k]); if(el)el.value=lbJoin(HDR_DEF[k]); } }
+async function loadLabelsGAS(){
+  if(!GAS_URL)return;
+  try{ const r=await fetch(GAS_URL,{method:'POST',headers:{'Content-Type':'text/plain;charset=utf-8'},body:JSON.stringify({action:'getLabels'})});
+    const j=await r.json();
+    if(j&&j.ok&&j.labels){ ['kenmei','nohin','yuko'].forEach(k=>{ if(Array.isArray(j.labels[k])&&j.labels[k].length)HDR_DEF[k]=j.labels[k]; }); }
+  }catch(_){}
+  lbFillInputs();
+}
+function bindLabelsUI(){
+  const msg=t=>{ const e=$('lbMsg'); if(e)e.textContent=t||''; };
+  if($('lbSave'))$('lbSave').addEventListener('click',async()=>{
+    const next={kenmei:lbParse($('lbKenmei').value),nohin:lbParse($('lbNohin').value),yuko:lbParse($('lbYuko').value)};
+    for(const k in next){ if(!next[k].length)next[k]=HDR_DEF_DEFAULT[k].slice(); }
+    HDR_DEF=next; lbFillInputs();
+    if(!GAS_URL){ msg('この端末にのみ反映しました（共有設定なし）'); return; }
+    showLoading('保存中…');
+    try{ const r=await fetch(GAS_URL,{method:'POST',headers:{'Content-Type':'text/plain;charset=utf-8'},body:JSON.stringify({action:'saveLabels',labels:HDR_DEF})});
+      const j=await r.json(); msg(j&&j.ok?'保存しました（全PCに反映）':'保存に失敗しました。Code.gsを「新しいバージョン」で再デプロイしてください');
+    }catch(_){ msg('保存に失敗しました（通信エラー）'); } finally{ hideLoading(); }
+  });
+  if($('lbReset'))$('lbReset').addEventListener('click',()=>{ HDR_DEF=JSON.parse(JSON.stringify(HDR_DEF_DEFAULT)); lbFillInputs(); msg('既定に戻しました（保存するまで共有されません）'); });
+  if($('lbTest'))$('lbTest').addEventListener('click',()=>{
+    const out=$('lbTestOut'); if(!out)return;
+    if(!fmtWords){ out.textContent='このタブでPDFを読み込んでから試してください'; return; }
+    const h=extractHeader(fmtWords);
+    out.textContent=`件名「${h.kenmei||'—'}」／納入場所「${h.nohin||'—'}」／有効期限「${h.yuko||'—'}」`;
+  });
+  lbFillInputs();
+}
+function extractHeader(words){
+  const rows=hdrRowText(words); const out={kenmei:'',nohin:'',yuko:''}; const STOP=hdrStopRe();
+  for(const key in HDR_DEF){
+    for(const lab of HDR_DEF[key]){
+      if(out[key])break;
+      for(let i=0;i<rows.length;i++){
+        const p=rows[i].indexOf(lab); if(p<0)continue;
+        let v=rows[i].slice(p+lab.length).replace(/^[：:・]+/,'');
+        const m=v.search(STOP); if(m>=0)v=v.slice(0,m);
+        v=v.replace(/^[：:・\-]+/,'').trim();
+        // 〒だけ拾えた場合は、ラベルの無い次の行をつないで住所にする
+        if(/^〒?\d{3}-?\d{4}$/.test(v)){
+          for(let k=i+1;k<Math.min(i+3,rows.length);k++){
+            if(!rows[k]||STOP.test(rows[k]))break;
+            v+=' '+rows[k];
+          }
+        }
+        // カッコが閉じていない＝工事名が次の行に続いている場合はつなぐ
+        const unbal=t=>{ const o=(t.match(/[（(［[]/g)||[]).length, c=(t.match(/[）)］\]]/g)||[]).length; return o>c; };
+        for(let k=i+1;k<Math.min(i+4,rows.length)&&unbal(v);k++){
+          if(!rows[k]||STOP.test(rows[k]))break;
+          v+=rows[k];
+        }
+        if(v){ out[key]=v.slice(0,80); break; }
+      }
+    }
+  }
+  return out;
+}
 // 書式が未登録でも、PDF本文から発行元の会社名を拾う（宛先の自社名は除外）
 function detectSupplierName(words){
   const kw=/(株式会社|有限会社|合同会社|㈱|㈲)/;
@@ -1870,7 +1978,7 @@ fillTantoSelect();            // 担当者コードのプルダウン
 syncTantoFromProfile();       // この端末の担当者に合わせて担当者コードを初期反映
 // 作業中データ（続きから）
 HKEYS.forEach(k=>{ const e=$(k); if(e)e.addEventListener('input',saveDraft); });
-loadDrafts(); bindDrafts(); renderDraftList(); setToday(); peekQuoteNo(); initLearnSwitch();
+loadDrafts(); bindDrafts(); renderDraftList(); setToday(); peekQuoteNo(); initLearnSwitch(); bindLabelsUI();
 LINES=[]; render();   // 起動時は空。続き一覧から選ぶかPDFを読み込む
 showStep(1);
 showLoading('読み込み中…');   // 起動時のマスタ取得が終わるまで操作をブロック
@@ -1878,6 +1986,7 @@ Promise.allSettled([
   loadProfilesGAS(),   // GASに共有プリセットがあれば上書き
   loadFormatsGAS(),    // 登録済みの仕入先書式を読み込む
   loadLearnedGAS(),    // 名寄せ学習データを読み込む
+  loadLabelsGAS(),     // PDFヘッダのラベル言い回し（全PC共通）
   loadAllMaster().then(()=>{ const e=$('masterLoadStat'); if(e)e.textContent=ALLMASTER.length?`商品マスタ ${ALLMASTER.length}件 検索可`:'';
     setMasterStat(MASTER_FROM_SHEET?`スプレッドシート商品台帳：${ALLMASTER.length}件 使用中`:`内蔵マスタ使用中（${ALLMASTER.length}件）`); }), // 検索用マスタ＋状態表示
   loadAllTokui().then(()=>{ populateTokuiLists(); const e=$('tokuiStat'); if(e)e.textContent=ALLTOKUI.length?`得意先 ${ALLTOKUI.length}件 検索可`:'（得意先台帳が未登録。管理→得意先台帳マスタで取り込み）'; const st=$('tokuiMasterStat'); if(st&&ALLTOKUI.length)st.textContent=`登録済み：${ALLTOKUI.length}件`; }), // 得意先マスタ
