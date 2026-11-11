@@ -545,6 +545,21 @@
         <tbody id="quotesRows"></tbody></table>
       </div>
     </div>
+    <div class="card">
+      <h2>名寄せの学習データ</h2>
+      <p class="hint" style="margin-top:0">エクスポート時に「学習する」がONだったときに覚えた「仕入先＋品名 → 商品コード」です。間違って覚えた行は❌で削除してください。削除すると次回の読み込みから効きます。</p>
+      <div class="row" style="margin:8px 0;gap:8px;align-items:center">
+        <select id="lrnSup" style="min-width:160px"><option value="">すべての仕入先</option></select>
+        <input class="m" id="lrnQ" placeholder="品名・コードで絞り込み" style="min-width:200px">
+        <button type="button" class="ghost" id="lrnReload">再読み込み</button>
+        <button type="button" class="ghost sm" id="lrnDelSup" style="color:var(--new)">この仕入先の学習を全削除</button>
+        <span class="hint" id="lrnStat" style="margin:0"></span>
+      </div>
+      <div class="tablewrap">
+        <table style="min-width:640px"><thead><tr><th class="l">仕入先</th><th class="l">覚えている品名</th><th class="l">コード</th><th class="l">台帳の商品名</th><th></th></tr></thead>
+        <tbody id="lrnRows"></tbody></table>
+      </div>
+    </div>
     <div class="stepnav"><button type="button" class="ghost" data-go="1">◀ 戻る</button><span></span></div>
   </section>
 </div>
@@ -963,9 +978,17 @@ async function loadAllMaster(){
   }
   ALLMASTER = MASTER.map(([c,n,u])=>({code:c,name:n,unit:u})); MASTER_FROM_SHEET=false;  // スプレッドシート不可時は内蔵マスタ
 }
+// 検索も名寄せと同じ正規化（全半角・大小・㈱・空白・記号の差を無視）
+const msKey=s=>{ let t=String(s||'');
+  try{ t=t.normalize('NFKC'); }catch(_){}
+  return t.toLowerCase()
+    .replace(/(株式会社|有限会社|合同会社|㈱|㈲|\(株\)|\(有\))/g,'')
+    .replace(/[×✕＊]/g,'*').replace(/(\d)x(?=\d)/g,'$1*').replace(/[Φφ]/g,'f')
+    .replace(/[\s\-‐―−_.,、。・／\/]/g,''); };
 function searchMaster(q,k=30){ q=(q||'').trim(); if(!q)return [];
-  const ts=q.split(/\s+/).filter(Boolean);
-  return ALLMASTER.filter(m=>{ const hay=m.code+' '+m.name; return ts.every(t=>hay.includes(t)); }).slice(0,k); }
+  const ts=q.split(/\s+/).filter(Boolean).map(msKey).filter(Boolean);
+  if(!ts.length)return [];
+  return ALLMASTER.filter(m=>{ const hay=msKey(m.code+' '+m.name); return ts.every(t=>hay.indexOf(t)>=0); }).slice(0,k); }
 // ===== 行内の商品検索（コードのチップをクリック→検索ボックスで選ぶ） =====
 function codeName(code){ if(!code)return''; const m=(ALLMASTER||[]).find(x=>x.code===code); return m?m.name:''; }
 let msInlineIdx=-1;
@@ -1794,6 +1817,67 @@ async function releaseQuoteNo(no){
   const tb=$('quotesRows'); if(tb)tb.addEventListener('click',e=>{ const b=e.target.closest('[data-qno]'); if(b)releaseQuoteNo(b.dataset.qno); });
   document.querySelectorAll('.qtab').forEach(b=>b.addEventListener('click',()=>{ qFilter=b.dataset.qtab; document.querySelectorAll('.qtab').forEach(x=>x.classList.toggle('on',x===b)); renderQuoteRows(); })); })();
 
+// ===== 名寄せの学習データ管理（一覧・個別削除） =====
+function renderLearnRows(){
+  const tb=$('lrnRows'); if(!tb)return;
+  const supSel=$('lrnSup'), q=($('lrnQ')&&$('lrnQ').value||'').trim();
+  const only=supSel?supSel.value:'';
+  const rows=[];
+  Object.keys(LEARNED||{}).sort().forEach(sup=>{
+    if(only&&sup!==only)return;
+    const m=LEARNED[sup]||{};
+    Object.keys(m).sort().forEach(name=>rows.push({sup,name,code:String(m[name])}));
+  });
+  const ts=q?q.split(/\s+/).map(msKey).filter(Boolean):[];
+  const list=ts.length?rows.filter(r=>{ const hay=msKey(r.name+' '+r.code+' '+codeName(r.code)); return ts.every(t=>hay.indexOf(t)>=0); }):rows;
+  const stat=$('lrnStat'); if(stat)stat.textContent=`${list.length}件${rows.length!==list.length?`（全${rows.length}件）`:''}`;
+  tb.innerHTML=list.length?list.slice(0,400).map(r=>{
+    const mn=codeName(r.code);
+    return `<tr><td class="l">${esc(r.sup)}</td><td class="l" style="white-space:normal">${esc(r.name)}</td><td class="l mono">${esc(r.code)}</td><td class="l" style="white-space:normal">${mn?esc(mn):'<span class="hint">台帳に無し</span>'}</td>`+
+      `<td><button type="button" class="delrow" data-lrn="${esc(r.sup)}" data-lname="${esc(r.name)}" title="この学習を削除">×</button></td></tr>`;
+  }).join(''):`<tr><td colspan="5" class="hint" style="padding:8px">学習データはありません</td></tr>`;
+  if(list.length>400)tb.insertAdjacentHTML('beforeend',`<tr><td colspan="5" class="hint" style="padding:8px">※ 400件まで表示しています。絞り込んでください</td></tr>`);
+}
+function fillLearnSupSel(){
+  const sel=$('lrnSup'); if(!sel)return; const cur=sel.value;
+  const sups=Object.keys(LEARNED||{}).sort();
+  sel.innerHTML='<option value="">すべての仕入先</option>'+sups.map(s=>`<option value="${esc(s)}">${esc(s)}（${Object.keys(LEARNED[s]||{}).length}）</option>`).join('');
+  sel.value=sups.indexOf(cur)>=0?cur:'';
+}
+async function unlearnOne(sup,name){
+  if(!confirm(`この学習を削除しますか？\n\n仕入先：${sup}\n品名：${name}\n\n次回の読み込みから、この品名は自動でコードが入らなくなります。`))return;
+  if(!GAS_URL){ if(LEARNED[sup])delete LEARNED[sup][name]; fillLearnSupSel(); renderLearnRows(); return; }
+  showLoading('削除中…');
+  try{
+    const r=await fetch(GAS_URL,{method:'POST',headers:{'Content-Type':'text/plain;charset=utf-8'},body:JSON.stringify({action:'unlearn',supplier:sup,names:[name]})});
+    const j=await r.json();
+    if(j&&j.ok){ if(LEARNED[sup]){ delete LEARNED[sup][name]; if(!Object.keys(LEARNED[sup]).length)delete LEARNED[sup]; }
+      fillLearnSupSel(); renderLearnRows(); toast('削除しました'); }
+    else toast('削除できませんでした。Code.gsを「新しいバージョン」で再デプロイしてください');
+  }catch(_){ toast('削除に失敗（通信エラー）'); } finally{ hideLoading(); }
+}
+async function unlearnSupplier(){
+  const sup=$('lrnSup')?$('lrnSup').value:'';
+  if(!sup){ toast('先に仕入先を選んでください'); return; }
+  const n=Object.keys(LEARNED[sup]||{}).length;
+  if(!confirm(`「${sup}」の学習 ${n}件 をすべて削除しますか？\nこの操作は元に戻せません。`))return;
+  if(!GAS_URL){ delete LEARNED[sup]; fillLearnSupSel(); renderLearnRows(); return; }
+  showLoading('削除中…');
+  try{
+    const r=await fetch(GAS_URL,{method:'POST',headers:{'Content-Type':'text/plain;charset=utf-8'},body:JSON.stringify({action:'unlearn',supplier:sup})});
+    const j=await r.json();
+    if(j&&j.ok){ delete LEARNED[sup]; fillLearnSupSel(); renderLearnRows(); toast(`${sup} の学習を削除しました`); }
+    else toast('削除できませんでした。Code.gsを再デプロイしてください');
+  }catch(_){ toast('削除に失敗（通信エラー）'); } finally{ hideLoading(); }
+}
+(function(){
+  const tb=$('lrnRows'); if(tb)tb.addEventListener('click',e=>{ const b=e.target.closest('[data-lrn]'); if(b)unlearnOne(b.dataset.lrn,b.dataset.lname); });
+  if($('lrnQ'))$('lrnQ').addEventListener('input',renderLearnRows);
+  if($('lrnSup'))$('lrnSup').addEventListener('change',renderLearnRows);
+  if($('lrnDelSup'))$('lrnDelSup').addEventListener('click',unlearnSupplier);
+  if($('lrnReload'))$('lrnReload').addEventListener('click',async()=>{ showLoading('読み込み中…'); try{ await loadLearnedGAS(); }finally{ hideLoading(); } fillLearnSupSel(); renderLearnRows(); });
+})();
+
 // ===== 自分のエクスポート履歴（①・この端末の担当者で絞り込み） =====
 async function loadMyExports(){
   const body=$('myExpBody'); if(!body)return; const tb=$('myExpRows'), stat=$('myExpStat');
@@ -1834,7 +1918,7 @@ function showStep(n){
   sec.classList.add(back?'anim-back':'anim-fwd');
   if(n===2){ peekQuoteNo(); }   // ②に入ったら次の番号（目安）を更新
   if(n===3){ $('csvOut').textContent=buildCsv(); $('csvOut').hidden=false; updateNewRegCard(); }
-  if(n===5){ loadQuoteList(); }   // 見積番号管理
+  if(n===5){ loadQuoteList(); fillLearnSupSel(); renderLearnRows(); }   // 見積番号管理＋学習データ
   curStep=n;
   window.scrollTo({top:0,behavior:'smooth'});
 }
