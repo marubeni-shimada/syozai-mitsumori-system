@@ -1993,20 +1993,21 @@ async function fmtRenderPage(){
 // 列ごとの色付き四角を描画
 const COLDEF=[['name','#2f6fb0','品名'],['qty','#9a5b00','数量'],['unit','#0d6a49','単位'],['price','#b23b3b','単価']];
 function drawBoxes(){
-  const g=$('fmtBoxes'); const h=$('fmtCanvas').height; g.innerHTML='';
+  const g=$('fmtBoxes'); if(!g)return; const h=$('fmtCanvas').height; g.innerHTML='';
+  if(!fmtCols)return;
   COLDEF.forEach(([k,color,label])=>{
-    const r=fmtCols[k]; if(!r)return;
+    const r=fmtCols[k]; if(!r||!r.length)return;
     const d=document.createElement('div');
-    d.style.cssText=`position:absolute;top:0;height:${h}px;left:${r[0]*fmtScale}px;width:${(r[1]-r[0])*fmtScale}px;background:${color}22;border-left:2px solid ${color};border-right:2px solid ${color};box-sizing:border-box`;
+    d.style.cssText=`position:absolute;top:0;height:${h}px;left:${r[0]*fmtScale}px;width:${Math.max(2,(r[1]-r[0])*fmtScale)}px;background:${color}40;border-left:3px solid ${color};border-right:3px solid ${color};box-sizing:border-box;pointer-events:none`;
     const tag=document.createElement('div'); tag.textContent=label;
-    tag.style.cssText=`position:absolute;top:2px;left:0;font-size:10px;font-weight:700;color:#fff;background:${color};padding:1px 4px;border-radius:0 0 4px 0`;
+    tag.style.cssText=`position:absolute;top:2px;left:0;font-size:11px;font-weight:700;color:#fff;background:${color};padding:1px 5px;border-radius:0 0 4px 0;white-space:nowrap`;
     d.appendChild(tag); g.appendChild(d);
   });
 }
 function fmtPreview(){
   // 実際の読み込みと同じく全ページを対象に抽出する
   const src=(fmtPagesWords&&fmtPagesWords.length)?fmtPagesWords:[fmtWords];
-  let rows=[]; src.forEach(w=>{ rows=rows.concat(parsePage(w,fmtCols).filter(r=>r[0]==='item')); });
+  let rows=[]; try{ src.forEach(w=>{ rows=rows.concat(parsePage(w,fmtCols).filter(r=>r[0]==='item')); }); }catch(_){ rows=[]; }
   const n=rows.length;
   $('fmtRows').innerHTML=rows.map(r=>`<tr><td class="l">${esc(r[1])}</td><td>${r[3]}</td><td>${esc(r[2])}</td><td>${(r[4]).toLocaleString('ja-JP')}</td></tr>`).join('')
     || '<tr><td colspan="4" class="l" style="color:var(--muted)">この範囲では明細を検出できません。囲み直してください。</td></tr>';
