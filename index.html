@@ -472,6 +472,12 @@
       </div>
       <p class="hint" id="fmtMsg"></p>
       <div id="fmtStage" hidden style="margin-top:12px">
+        <div class="row" id="fmtPageNav" hidden style="margin-bottom:8px;align-items:center;gap:8px">
+          <button type="button" class="ghost sm" id="fmtPrev">◀ 前のページ</button>
+          <span class="hint" id="fmtPageLbl" style="margin:0;font-weight:700"></span>
+          <button type="button" class="ghost sm" id="fmtNext">次のページ ▶</button>
+          <span class="hint" id="fmtPageNote" style="margin:0"></span>
+        </div>
         <div class="row" style="margin-bottom:8px;align-items:center;gap:8px 10px">
           <button type="button" id="fmtRangeStart">まとめて範囲指定</button>
           <span class="hint" style="margin:0">個別に直す：</span>
@@ -487,7 +493,7 @@
         <p class="hint" id="fmtRangeHint">「範囲をドラッグで指定」を押して、品名→数量→単位→単価の順に、それぞれの列を横方向にドラッグして囲んでください（上下はどこでもOK、左右の位置だけ使います）。</p>
       </div>
       <div id="fmtPreview" hidden>
-        <h2 style="margin-top:16px">抽出プレビュー（この境界での結果）</h2>
+        <h2 style="margin-top:16px">抽出プレビュー（この境界での結果）<span class="hint" id="fmtPreviewCap" style="font-weight:400;margin-left:8px"></span></h2>
         <div class="tablewrap"><table style="min-width:520px"><thead><tr><th class="l">品名</th><th>数量</th><th>単位</th><th>単価</th></tr></thead><tbody id="fmtRows"></tbody></table></div>
       </div>
     </div>
@@ -1572,12 +1578,14 @@ function buildCsv(){
     return r; };
   const zeros=r=>{ r[18]='0';r[20]='0';r[21]='0';['23','24','25','27','28','29'].forEach(c=>r[+c]='0');r[31]='0';r[32]='0'; };
   const push=r=>{ ln++; r[13]=String(ln); rows.push(r.map(v=>`"${String(v).replace(/"/g,'""')}"`).join(',')); };
-  // 本体：仕入先が切り替わるたびに種別6（会社名の見出し）を入れる＝複数仕入先を1見積に
+  // 本体：仕入先が2社以上のときだけ、切り替わりで種別6（会社名の見出し）を入れる
+  const supList=[...new Set(LINES.filter(l=>l.kind==='item').map(l=>l.supplier||H.supplier||''))];
+  const multiSupCsv=supList.length>1;
   let curSup=null, first=true;
   LINES.forEach(l=>{
     if(l.kind==='item'){
       const sup=(l.supplier||H.supplier||'');
-      if(sup!==curSup){
+      if(multiSupCsv && sup!==curSup){
         if(!first){ const s=base(); s[14]='5'; s[17]=''; zeros(s); push(s); }   // ブロック間の空行区切り
         const h=base(); h[14]='6'; h[17]=sup; zeros(h); push(h);                 // 会社名見出し（印刷されない／伝票に表示）
         curSup=sup; first=false;
@@ -1651,6 +1659,15 @@ $('dlCsv').addEventListener('click',async()=>{ if(!LINES.length){toast('明細�
   setToday();   // 見積日は常に当日
   if(!($('hTokui').value||'').trim()){ toast('得意先コードが空です。②で得意先を検索して選んでください'); $('hTokui').focus(); const el=$('hTokui'); if(el){el.style.outline='2px solid #d33';setTimeout(()=>el.style.outline='',2500);} return; }
   if(!($('hTanto')&&($('hTanto').value||'').trim())){ toast('担当者が未選択です。②で担当者を選んでください（マージンが担当者ごとの設定になります）'); if($('hTanto')){$('hTanto').focus(); $('hTanto').style.outline='2px solid #d33'; setTimeout(()=>$('hTanto').style.outline='',2500);} return; }
+  // 商品コードが入っていない新規品がある場合は警告（採番より前。やめた番号を無駄にしない）
+  {
+    const news=newItems();
+    if(news.length){
+      const head=news.slice(0,5).map(l=>'・'+(l.name||'（品名なし）')).join('\n');
+      const more=news.length>5?`\n…ほか${news.length-5}件`:'';
+      if(!confirm(`商品コードが入っていない品が ${news.length}件 あります。\n\n${head}${more}\n\n弥生は商品台帳に無い品を取り込めません。先に「新規品の台帳登録ファイル」を出力して登録してください。\n\nこのままエクスポートしますか？`)) return;
+    }
+  }
   // 見積番号を採番（スプレッドシート共有カウンタ。全PCで連番・重複なし）
   // 未設定のときだけ採番。設定済み（同じ見積の再エクスポート）は同じ番号を再利用
   if(!($('hNo').value||'').trim()){
@@ -1938,18 +1955,38 @@ function renderFormatSel(){
     return `<tr><td class="l">${esc(f.name)}</td><td class="l mono">品${s('name')} 数${s('qty')} 単${s('unit')} 価${s('price')}</td><td><button class="delrow" data-fdel="${i}">×</button></td></tr>`;
   }).join(''); }
 }
+let fmtPdfDoc=null, fmtPageNo=1, fmtPagesWords=[];
 async function fmtLoadPdf(file){
   $('fmtMsg').textContent='PDF解析中…';
-  const buf=await file.arrayBuffer(); const pdf=await pdfjsLib.getDocument({data:buf,...PDF_OPTS}).promise;
-  const page=await pdf.getPage(1);
+  const buf=await file.arrayBuffer(); fmtPdfDoc=await pdfjsLib.getDocument({data:buf,...PDF_OPTS}).promise;
+  // 全ページの文字を先に読む（プレビューは全ページぶんを対象にする）
+  fmtPagesWords=[];
+  for(let p=1;p<=fmtPdfDoc.numPages;p++){
+    const pg=await fmtPdfDoc.getPage(p); const b=pg.getViewport({scale:1}); const tc=await pg.getTextContent();
+    fmtPagesWords.push(tc.items.filter(it=>it.str.trim()).map(it=>({x0:it.transform[4],top:b.height-it.transform[5],text:it.str.trim()})));
+  }
+  // 明細ヘッダ（数量＋単価/金額）がある最初のページを初期表示にする
+  const hdrPage=fmtPagesWords.findIndex(w=>{ const j=w.map(x=>x.text).join(''); return j.includes('数量')&&(j.includes('単価')||j.includes('金額')); });
+  fmtPageNo=hdrPage>=0?hdrPage+1:1;
+  $('fmtStage').hidden=false; $('fmtPreview').hidden=false;
+  const multi=fmtPdfDoc.numPages>1; $('fmtPageNav').hidden=!multi;
+  await fmtRenderPage();   // 現在ページを描画＋列を自動検出
+}
+// 指定ページを描画し、そのページで列を自動検出
+async function fmtRenderPage(){
+  const page=await fmtPdfDoc.getPage(fmtPageNo);
   fmtScale=1.3; const vp=page.getViewport({scale:fmtScale});
   const cv=$('fmtCanvas'); cv.width=vp.width; cv.height=vp.height;
   await page.render({canvasContext:cv.getContext('2d'),viewport:vp}).promise;
-  const base=page.getViewport({scale:1}); const tc=await page.getTextContent();
-  fmtWords=tc.items.filter(it=>it.str.trim()).map(it=>({x0:it.transform[4],top:base.height-it.transform[5],text:it.str.trim()}));
-  fmtCols=JSON.parse(JSON.stringify(toRanges(detectCols(fmtWords))));
-  $('fmtStage').hidden=false; $('fmtPreview').hidden=false;
-  $('fmtMsg').textContent=detectCols(fmtWords)?'列を自動で囲みました。ズレていたら「範囲をドラッグで指定」で囲み直せます。':'自動で囲めませんでした。「範囲をドラッグで指定」で各列を囲んでください。';
+  fmtWords=fmtPagesWords[fmtPageNo-1]||[];
+  // 列は全ページ共通。未設定のページで自動検出できたらそれを採用
+  if(!fmtCols || !fmtCols.name){ const d=detectCols(fmtWords); if(d)fmtCols=JSON.parse(JSON.stringify(toRanges(d))); }
+  if($('fmtPageLbl'))$('fmtPageLbl').textContent=`${fmtPageNo} / ${fmtPdfDoc.numPages} ページ`;
+  const hasHdr=(()=>{ const j=fmtWords.map(x=>x.text).join(''); return j.includes('数量')&&(j.includes('単価')||j.includes('金額')); })();
+  if($('fmtPageNote'))$('fmtPageNote').textContent=hasHdr?'（このページに明細の見出しがあります）':'（表紙・合計など明細の見出しがないページ）';
+  if($('fmtPrev'))$('fmtPrev').disabled=(fmtPageNo<=1);
+  if($('fmtNext'))$('fmtNext').disabled=(fmtPageNo>=fmtPdfDoc.numPages);
+  $('fmtMsg').textContent=(fmtCols&&fmtCols.name)?'列を囲みました。ズレていたら「まとめて範囲指定」や各列ボタンで囲み直せます。明細のあるページで囲めば全ページに適用されます。':'このページで明細が見つかりません。明細のあるページへ移動して列を囲んでください。';
   drawBoxes(); fmtPreview();
 }
 // 列ごとの色付き四角を描画
@@ -1966,9 +2003,13 @@ function drawBoxes(){
   });
 }
 function fmtPreview(){
-  const rows=parsePage(fmtWords,fmtCols).filter(r=>r[0]==='item');
+  // 実際の読み込みと同じく全ページを対象に抽出する
+  const src=(fmtPagesWords&&fmtPagesWords.length)?fmtPagesWords:[fmtWords];
+  let rows=[]; src.forEach(w=>{ rows=rows.concat(parsePage(w,fmtCols).filter(r=>r[0]==='item')); });
+  const n=rows.length;
   $('fmtRows').innerHTML=rows.map(r=>`<tr><td class="l">${esc(r[1])}</td><td>${r[3]}</td><td>${esc(r[2])}</td><td>${(r[4]).toLocaleString('ja-JP')}</td></tr>`).join('')
     || '<tr><td colspan="4" class="l" style="color:var(--muted)">この範囲では明細を検出できません。囲み直してください。</td></tr>';
+  const cap=$('fmtPreviewCap'); if(cap)cap.textContent=n?`全${src.length}ページから ${n}件 を抽出`:'';
 }
 // 範囲ドラッグ（指定した列を順に囲む。SEQは全列 or 単列）
 const COL_LABEL={name:'品名',qty:'数量',unit:'単位',price:'単価'};
@@ -1978,12 +2019,14 @@ function startRange(seq){ if(!fmtWords){toast('先にPDFを読み込んでくだ
 function promptRange(){ const k=rangeSeq[rangeIdx];
   $('fmtRangeHint').innerHTML=`<b>範囲指定（${rangeIdx+1}/${rangeSeq.length}）：</b>「<b style="color:var(--accent)">${COL_LABEL[k]}</b>」の列を横方向にドラッグで囲んでください`; }
 function bindFormatTab(){
-  $('fmtPdf').addEventListener('change',e=>{ const f=e.target.files[0]; if(f)fmtLoadPdf(f); e.target.value=''; });
+  $('fmtPdf').addEventListener('change',e=>{ const f=e.target.files[0]; if(f){ fmtCols=null; fmtLoadPdf(f); } e.target.value=''; });
+  if($('fmtPrev'))$('fmtPrev').addEventListener('click',async()=>{ if(fmtPageNo>1){ fmtPageNo--; await fmtRenderPage(); } });
+  if($('fmtNext'))$('fmtNext').addEventListener('click',async()=>{ if(fmtPdfDoc&&fmtPageNo<fmtPdfDoc.numPages){ fmtPageNo++; await fmtRenderPage(); } });
   (function(){ const dz=$('fmtDrop'); if(!dz)return;
     dz.addEventListener('click',()=>$('fmtPdf').click());
     ['dragenter','dragover'].forEach(ev=>dz.addEventListener(ev,e=>{e.preventDefault();e.stopPropagation();dz.classList.add('drag');}));
     ['dragleave','dragend'].forEach(ev=>dz.addEventListener(ev,e=>{e.preventDefault();e.stopPropagation();dz.classList.remove('drag');}));
-    dz.addEventListener('drop',e=>{e.preventDefault();e.stopPropagation();dz.classList.remove('drag'); const f=e.dataTransfer&&e.dataTransfer.files&&e.dataTransfer.files[0]; if(f&&/\.pdf$/i.test(f.name||'')) fmtLoadPdf(f); }); })();
+    dz.addEventListener('drop',e=>{e.preventDefault();e.stopPropagation();dz.classList.remove('drag'); const f=e.dataTransfer&&e.dataTransfer.files&&e.dataTransfer.files[0]; if(f&&/\.pdf$/i.test(f.name||'')){ fmtCols=null; fmtLoadPdf(f); } }); })();
   $('fmtRangeStart').addEventListener('click',()=>startRange());
   document.querySelectorAll('[data-only]').forEach(b=>b.addEventListener('click',()=>startRange([b.dataset.only])));
   const inner=$('fmtStageInner'); const cv=$('fmtCanvas');
@@ -2007,7 +2050,8 @@ function bindFormatTab(){
     const name=($('fmtName').value||'').trim(); if(!name){ toast('会社名を入れてください'); return; }
     if(!fmtCols){ toast('先にPDFを読み込んでください'); return; }
     const i=FORMATS.findIndex(f=>f.name===name);
-    const rec={name,cols:Object.assign({},fmtCols),sig:telDigits(fmtWords)};
+    const allW=(fmtPagesWords&&fmtPagesWords.length)?[].concat(...fmtPagesWords):fmtWords;
+    const rec={name,cols:Object.assign({},fmtCols),sig:telDigits(allW)};   // 電話番号は表紙ページにあることが多いので全ページから拾う
     if(i>=0)FORMATS[i]=rec; else FORMATS.push(rec);
     toast('保存中…',true); const ok=await saveFormatsGAS();
     renderFormatSel(); toastDone(ok?`書式「${name}」を保存しました`:'GAS保存に失敗（接続を確認）');
