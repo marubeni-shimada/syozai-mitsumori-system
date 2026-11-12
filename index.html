@@ -1981,6 +1981,7 @@ async function fmtRenderPage(){
   fmtWords=fmtPagesWords[fmtPageNo-1]||[];
   // 列は全ページ共通。未設定のページで自動検出できたらそれを採用
   if(!fmtCols || !fmtCols.name){ const d=detectCols(fmtWords); if(d)fmtCols=JSON.parse(JSON.stringify(toRanges(d))); }
+  if(!fmtCols)fmtCols={};   // 自動検出できなくても手動指定を受けられるよう入れ物は必ず用意
   if($('fmtPageLbl'))$('fmtPageLbl').textContent=`${fmtPageNo} / ${fmtPdfDoc.numPages} ページ`;
   const hasHdr=(()=>{ const j=fmtWords.map(x=>x.text).join(''); return j.includes('数量')&&(j.includes('単価')||j.includes('金額')); })();
   if($('fmtPageNote'))$('fmtPageNote').textContent=hasHdr?'（このページに明細の見出しがあります）':'（表紙・合計など明細の見出しがないページ）';
@@ -2040,6 +2041,7 @@ function bindFormatTab(){
     rStartX=null; if(rubber){rubber.remove();rubber=null;}
     if(b-a<4){ promptRange(); return; }  // 誤クリック無視
     const doneKey=rangeSeq[rangeIdx];
+    if(!fmtCols)fmtCols={};
     fmtCols[doneKey]=[a,b];
     toast(`「${COL_LABEL[doneKey]}」の範囲指定が完了しました`);
     rangeIdx++; drawBoxes(); fmtPreview();
