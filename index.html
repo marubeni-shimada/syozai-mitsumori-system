@@ -144,6 +144,11 @@
   .tab.active{border-color:var(--accent);color:var(--fg);background:var(--accent-soft);box-shadow:0 2px 10px rgba(47,111,176,.18)}
   .tab.active .n{background:var(--accent);color:#fff;transform:scale(1.12)}
   .tab.done .n{background:var(--sell);color:#fff}
+  .peekbox{display:inline-block;background:var(--accent-soft);color:var(--accent);border:1px solid var(--accent);border-radius:8px;padding:5px 12px;font-weight:700;font-size:.9rem}
+  .moderow{display:flex;gap:10px;flex-wrap:wrap;margin:2px 0 4px}
+  .modebtn{flex:1 1 220px;padding:14px 16px;border:2px solid var(--line);background:var(--surface);border-radius:12px;font-weight:700;font-size:1rem;cursor:pointer;color:var(--fg)}
+  .modebtn:hover{border-color:var(--accent)}
+  .modebtn.on{border-color:var(--accent);color:var(--accent);background:var(--accent-soft)}
   .stepnav{display:flex;justify-content:space-between;gap:10px;margin-top:2px}
   .stepnav button{min-width:120px}
   .warn-box{background:var(--warn-soft);color:var(--warn);border:1px solid var(--warn);border-radius:8px;padding:9px 12px;font-size:.82rem;margin:0 0 14px}
@@ -219,7 +224,13 @@
 
   <!-- ① 入力 -->
   <div class="card">
-    <h2>① 見積を読み込む</h2>
+    <h2>① 見積を作成</h2>
+    <div class="moderow">
+      <button type="button" class="modebtn on" id="modePdf">📄 PDFを読み込んで作成</button>
+      <button type="button" class="modebtn" id="modeManual">✎ 手入力で作成（PDFなし）</button>
+    </div>
+    <p class="hint" id="modeHint" style="margin:2px 0 8px">仕入先のPDF見積があるときは「PDF読み込み」、1〜2品だけなど手で入れたいときは「手入力」。番号・エクスポート・弥生取込の流れはどちらも同じです。</p>
+    <div id="peek1" class="peekbox" style="margin:0 0 12px">次の番号（目安）：—</div>
     <div id="pdfDrop" class="dropzone">
       <div class="dz-ico">⬆</div>
       <div class="dz-main">PDFをドラッグ＆ドロップ</div>
@@ -535,6 +546,17 @@
 
   <!-- 見積番号管理（管理者専用） -->
   <section class="step" id="step5" hidden>
+    <div class="card" style="border-color:var(--warn)">
+      <h2>番号の開始値（本番切替）</h2>
+      <p class="hint" style="margin-top:0">弥生の見積番号に合わせて、次に発行する番号をここでセットします。<b>本番に切り替えるときに1回だけ</b>使います。弥生の今の最大番号＋1を入れてください（例：弥生が00003250まで使っていれば <b>3251</b>）。</p>
+      <div class="row" style="align-items:center;gap:8px">
+        <span class="hint" id="seqNow" style="margin:0">現在の次の番号：—</span>
+        <input class="s" id="seqSet" inputmode="numeric" placeholder="例：3251" style="max-width:140px">
+        <button type="button" id="seqApply">この番号から開始する</button>
+        <span class="hint" id="seqMsg" style="margin:0"></span>
+      </div>
+      <p class="hint" style="margin:8px 0 0">※ ここを変えると、以降の採番がこの番号から始まります。解放ぶんの空きがある場合は、そちらが先に再利用されます。入力した番号より小さい既存番号とは重複しないよう、必ず弥生の最大＋1を入れてください。</p>
+    </div>
     <div class="card">
       <h2>見積番号管理</h2>
       <p class="hint" style="margin-top:0">エクスポートで発行した見積番号の一覧です。<b>使わなかった番号は❌で解放</b>すると、次回の採番で若い順に再利用されます。<br>※すでに弥生へ取り込んだ番号は解放しないでください（弥生側で番号が衝突します）。</p>
@@ -896,6 +918,17 @@ function openDraft(id){
 }
 function removeDraft(id){ DRAFTS=DRAFTS.filter(d=>d.id!==id); persistDrafts(); renderDraftList(); }
 function newDraft(){ curDraftId=null; curDraftName=''; LINES=[]; if($('hNo'))$('hNo').value=''; setToday(); if(typeof trashClear==='function')trashClear(); render(); renderDraftList(); toast('新規作成'); }
+// 手入力モード：PDFなしで空の明細から②を始める
+function startManual(){
+  newDraft(); curSupplier='';
+  addEmptyRow();           // 1行だけ用意して打ち始められるように
+  showStep(2);
+}
+(function(){
+  const mp=$('modePdf'), mm=$('modeManual');
+  if(mm)mm.addEventListener('click',()=>{ startManual(); });
+  if(mp)mp.addEventListener('click',()=>{ const d=$('pdfIn'); if(d)d.click(); });  // PDF選択を直接開く
+})();
 // エクスポート完了時：現在の見積を一覧から消す
 function finishDraft(){ if(curDraftId){ removeDraft(curDraftId); curDraftId=null; curDraftName=''; } if(typeof trashClear==='function')trashClear(); }
 function bindDrafts(){
@@ -1243,6 +1276,7 @@ async function processPdfFiles(fileList){
     }
     if(total) resolveAll();   // 全ファイル読み込み後にまとめて名寄せ
     toastDone(total?`明細 ${total} 件を読込（${nfile}ファイル）`:'明細を自動抽出できませんでした。手入力で。');
+    if(total) showStep(2);    // 読み取れたら自動で②へ（0件のときは①に留まる）
   } finally { hideLoading(); }
 }
 $('pdfIn').addEventListener('change',e=>{ processPdfFiles(e.target.files); e.target.value=''; });
@@ -1834,6 +1868,30 @@ async function releaseQuoteNo(no){
   const tb=$('quotesRows'); if(tb)tb.addEventListener('click',e=>{ const b=e.target.closest('[data-qno]'); if(b)releaseQuoteNo(b.dataset.qno); });
   document.querySelectorAll('.qtab').forEach(b=>b.addEventListener('click',()=>{ qFilter=b.dataset.qtab; document.querySelectorAll('.qtab').forEach(x=>x.classList.toggle('on',x===b)); renderQuoteRows(); })); })();
 
+// ===== 開始番号のセット（本番切替用） =====
+async function refreshSeqNow(){
+  const e=$('seqNow'); if(!e||!GAS_URL)return;
+  try{ const r=await fetch(GAS_URL,{method:'POST',headers:{'Content-Type':'text/plain;charset=utf-8'},body:JSON.stringify({action:'peekQuote'})});
+    const j=await r.json(); if(j&&j.ok&&j.no)e.textContent='現在の次の番号：'+j.no+(j.reused?`（解放ぶん優先・空き${j.freedCount}件）`:''); }catch(_){}
+}
+(function(){
+  const btn=$('seqApply'); if(!btn)return;
+  btn.addEventListener('click',async()=>{
+    const v=($('seqSet').value||'').replace(/[^\d]/g,'');
+    const n=parseInt(v,10);
+    if(!(n>=1)){ $('seqMsg').textContent='数字を入れてください'; return; }
+    if(!confirm(`次に発行する番号を ${('00000000'+n).slice(-8)} からにします。\n\n弥生の最大番号＋1になっていますか？これより小さい既存番号があると弥生側で重複します。\n実行しますか？`))return;
+    if(!GAS_URL){ $('seqMsg').textContent='GAS未接続のため設定できません'; return; }
+    showLoading('設定中…');
+    try{
+      const r=await fetch(GAS_URL,{method:'POST',headers:{'Content-Type':'text/plain;charset=utf-8'},body:JSON.stringify({action:'setQuoteSeq',start:n})});
+      const j=await r.json();
+      if(j&&j.ok){ $('seqMsg').textContent='セットしました（次の番号：'+j.no+'）'; $('seqSet').value=''; refreshSeqNow(); peekQuoteNo(); }
+      else $('seqMsg').textContent=(j&&j.error)||'設定できませんでした。Code.gsを再デプロイしてください';
+    }catch(_){ $('seqMsg').textContent='通信エラー'; } finally{ hideLoading(); }
+  });
+})();
+
 // ===== 名寄せの学習データ管理（一覧・個別削除） =====
 function renderLearnRows(){
   const tb=$('lrnRows'); if(!tb)return;
@@ -1910,16 +1968,20 @@ async function loadMyExports(){
 }
 (function(){ const t=$('myExpToggle'); if(!t)return; t.addEventListener('click',()=>{ const b=$('myExpBody'); const willOpen=b.hidden; b.hidden=!willOpen; const c=$('myExpCaret'); if(c)c.textContent=willOpen?'▾':'▸'; if(willOpen) loadMyExports(); }); })();
 
-// 見積番号の「次の番号（目安）」を②に表示（消費しない）
+// 見積番号の「次の番号（目安）」を①と②に表示（消費しない）
 async function peekQuoteNo(){
-  const e=$('hNoPeek'); if(!e) return;
-  if(($('hNo').value||'').trim()){ e.textContent='この見積の番号：'+$('hNo').value; return; }  // 採番済みならそれを表示
-  if(!GAS_URL){ e.textContent=''; return; }
+  const e=$('hNoPeek'), p1=$('peek1');
+  const set=(txt1,txt2)=>{ if(e)e.textContent=txt2; if(p1)p1.textContent=txt1; };
+  if(($('hNo').value||'').trim()){ set('この見積の番号：'+$('hNo').value,'この見積の番号：'+$('hNo').value); return; }  // 採番済みならそれを表示
+  if(!GAS_URL){ set('次の番号（目安）：—',''); return; }
   try{
     const r=await fetch(GAS_URL,{method:'POST',headers:{'Content-Type':'text/plain;charset=utf-8'},body:JSON.stringify({action:'peekQuote'})});
     const j=await r.json();
-    if(j&&j.ok&&j.no) e.textContent='次の番号（目安）：'+j.no;
-  }catch(_){ e.textContent=''; }
+    if(j&&j.ok&&j.no){
+      const note=j.reused?`　解放ぶんの再利用（空き${j.freedCount}件）`:'';
+      set('次の番号（目安）：'+j.no+note,'次の番号（目安）：'+j.no+note);
+    } else set('次の番号（目安）：—','');
+  }catch(_){ set('次の番号（目安）：—',''); }
 }
 function showStep(n){
   const back = n<curStep;
@@ -1933,9 +1995,9 @@ function showStep(n){
   const sec=$('step'+n);
   sec.classList.remove('anim-fwd','anim-back'); void sec.offsetWidth;
   sec.classList.add(back?'anim-back':'anim-fwd');
-  if(n===2){ peekQuoteNo(); }   // ②に入ったら次の番号（目安）を更新
+  if(n===1||n===2){ peekQuoteNo(); }   // ①・②で次の番号（目安）を更新
   if(n===3){ $('csvOut').textContent=buildCsv(); $('csvOut').hidden=false; updateNewRegCard(); }
-  if(n===5){ loadQuoteList(); fillLearnSupSel(); renderLearnRows(); }   // 見積番号管理＋学習データ
+  if(n===5){ loadQuoteList(); fillLearnSupSel(); renderLearnRows(); refreshSeqNow(); }   // 見積番号管理＋学習データ＋開始番号
   curStep=n;
   window.scrollTo({top:0,behavior:'smooth'});
 }
