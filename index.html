@@ -1880,7 +1880,7 @@ async function refreshSeqNow(){
     const v=($('seqSet').value||'').replace(/[^\d]/g,'');
     const n=parseInt(v,10);
     if(!(n>=1)){ $('seqMsg').textContent='数字を入れてください'; return; }
-    if(!confirm(`次に発行する番号を ${('00000000'+n).slice(-8)} からにします。\n\n弥生の最大番号＋1になっていますか？これより小さい既存番号があると弥生側で重複します。\n実行しますか？`))return;
+    if(!confirm(`次に発行する番号を ${('00000000'+n).slice(-8)} からにします。\n※これまでに解放した番号（テストの9番台など）はすべて破棄され、次はこの番号から始まります。\n\n弥生の最大番号＋1になっていますか？これより小さい既存番号があると弥生側で重複します。\n実行しますか？`))return;
     if(!GAS_URL){ $('seqMsg').textContent='GAS未接続のため設定できません'; return; }
     showLoading('設定中…');
     try{
