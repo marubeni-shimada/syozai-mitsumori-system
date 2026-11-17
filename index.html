@@ -116,6 +116,8 @@
   .loadmsg{font-size:13px;color:var(--fg);font-weight:700}
   .qtab{border:1px solid var(--line);background:var(--surface);color:var(--fg);padding:5px 14px;border-radius:999px;cursor:pointer;font-weight:600;font-size:.82rem}
   .qtab.on{background:var(--accent);color:#fff;border-color:var(--accent)}
+  .ctab{border:1px solid var(--line);background:var(--surface);color:var(--fg);padding:5px 14px;border-radius:999px;cursor:pointer;font-weight:600;font-size:.82rem}
+  .ctab.on{background:var(--accent);color:#fff;border-color:var(--accent)}
   /* ステップ切替 */
   .step.anim-fwd{animation:stepIn .34s cubic-bezier(.22,.9,.3,1)}
   @keyframes stepIn{from{opacity:0;transform:translateX(16px)}to{opacity:1;transform:translateX(0)}}
@@ -573,6 +575,23 @@
         <tbody id="quotesRows"></tbody></table>
       </div>
     </div>
+
+    <div class="card">
+      <h2>新規商品コード管理</h2>
+      <p class="hint" style="margin-top:0">「新規品の台帳登録ファイルを出力」で採番した商品コードの一覧です。システムが採番ぶんを記録しているので、台帳更新を忘れても二度振りしません。<b>結局登録しなかった番号は❌で解放</b>すると、次の採番で再利用されます。<br>※弥生の商品台帳に取り込み済みの番号は解放しないでください。台帳を更新（弥生の書き出しを読込）すると、登録済みの番号は自動で一覧から外れます。</p>
+      <div class="row" style="margin:8px 0;gap:8px;align-items:center">
+        <div class="ctabs" style="display:flex;gap:6px">
+          <button type="button" class="ctab on" data-ctab="active">採番中</button>
+          <button type="button" class="ctab" data-ctab="done">解放・登録済</button>
+        </div>
+        <button type="button" class="ghost" id="codesReload">再読み込み</button>
+        <span class="hint" id="codesStat"></span>
+      </div>
+      <div class="tablewrap">
+        <table style="min-width:560px"><thead><tr><th class="l">コード</th><th class="l">品名</th><th class="l">採番日時</th><th class="l">担当者</th><th class="l">状態</th><th></th></tr></thead>
+        <tbody id="codesRows"></tbody></table>
+      </div>
+    </div>
     <div class="card">
       <h2>名寄せの学習データ</h2>
       <p class="hint" style="margin-top:0">エクスポート時に「学習する」がONだったときに覚えた「仕入先＋品名 → 商品コード」です。間違って覚えた行は❌で削除してください。削除すると次回の読み込みから効きます。</p>
@@ -845,7 +864,7 @@ function render(animate){
       `<td><input class="celled" style="width:72px" data-i="${i}" data-k="cost" value="${l.cost}"></td>`+
       `<td><input class="celled" style="width:48px" data-i="${i}" data-k="margin" value="${l.margin}"></td>`+
       `<td class="sell" data-sell="${i}">${yen(sell)}</td><td class="sell" data-amt="${i}">${yen(amt)}</td>`+
-      `<td class="l">${tag} <button class="mschip" data-mschip="${i}" title="クリックで検索・選択">${l.code?esc(l.code+'｜'+codeName(l.code)):'<span class=\'hint\'>コードを選択 ▾</span>'}</button></td>`+
+      `<td class="l">${tag} <button class="mschip" data-mschip="${i}" title="クリックで検索・選択">${l.code?esc(l.code+'｜'+(codeName(l.code)||l.name||'')):'<span class=\'hint\'>コードを選択 ▾</span>'}</button></td>`+
       `<td><button class="addrow" data-add="${i}" title="この下に1行追加">＋</button><button class="delrow" data-del="${i}">×</button></td>`;
     if(String(l.unit||'').trim()==='回'){ tr.classList.add('warnrow'); tr.title='単位が「回」の行です（運搬費・経費など要確認）'; }
     tb.appendChild(tr);
@@ -1241,12 +1260,14 @@ function applyPdfHeader(hdr){
   return got;
 }
 // 仕入先名を確定（自動判別できなければ会社名を入力。既定値はファイル名から推測）
-function askSupplier(detected,file){
+function askSupplier(detected,file,idx,total){
   if(detected) return detected;
-  const nm=((file&&file.name)||'').replace(/\.pdf$/i,'');
+  const fn=((file&&file.name)||'');
+  const nm=fn.replace(/\.pdf$/i,'');
   const toks=nm.split(/[_\-\s　]+/).filter(t=>t&&!/^\d+$/.test(t));
   const base=(toks[0]||nm).replace(/(御?見積書?|見積り?)$/,'');
-  const v=prompt('この仕入先（会社名）を入力してください\n※PDFに会社名と電話番号が文字で入っていないと自動判別できません',base);
+  const head=(total>1&&idx)?`${idx}枚目のPDF「${fn}」`:`PDF「${fn}」`;
+  const v=prompt(`${head}の仕入先（会社名）を入力してください。\n※会社名と電話番号が文字で入っているPDFは自動で入ります。入らなかったのは、画像になっているか書式が未登録のためです。`,base);
   return (v&&v.trim())||base||'仕入先';
 }
 // 新規読込（複数ファイル可。1枚目＝入れ替え、2枚目以降＝追記＝複数仕入先を1見積に）
@@ -1254,13 +1275,14 @@ async function processPdfFiles(fileList){
   const files=Array.from(fileList||[]); if(!files.length)return; toast('PDF解析中…',true);
   showLoading('PDF解析中…');
   try{
+    const pdfs=files.filter(f=>/\.pdf$/i.test(f.name||''));
     let replaced=false, total=0, nfile=0;
-    for(const file of files){
-      if(!/\.pdf$/i.test(file.name||'')){ continue; }   // PDF以外は無視
+    for(let idx=0; idx<pdfs.length; idx++){
+      const file=pdfs[idx];
       let res; try{ res=await parsePdfFile(file); }catch(err){ console.error(err); continue; }
       const {parsed,fmt,supplier,hdr}=res;
       if(!parsed.some(r=>r[0]==='item')) continue;
-      const sup=askSupplier(supplier,file);   // 自動判別できなければ会社名を入力
+      const sup=askSupplier(supplier,file,idx+1,pdfs.length);   // 自動判別できなければ会社名を入力（何枚目か＋ファイル名を表示）
       if(!replaced){
         curDraftId=null; curDraftName=(file.name||'見積').replace(/\.pdf$/i,'');  // PDF名で新しい続きを作る
         if($('hNo'))$('hNo').value='';   // 新しい見積＝番号リセット
@@ -1647,8 +1669,9 @@ function updateNewRegCard(){
   card.hidden=false;
   $('newRegMsg').textContent=`台帳に無い新規品が ${news.length} 件あります。弥生は未登録品をそのまま取り込めないため、先に商品台帳へ登録してください。`;
 }
-async function allocCodes(count){
-  if(GAS_URL){ try{ const r=await fetch(GAS_URL,{method:'POST',headers:{'Content-Type':'text/plain;charset=utf-8'},body:JSON.stringify({action:'allocCodes',count})});
+async function allocCodes(items){
+  const count=items.length;
+  if(GAS_URL){ try{ const r=await fetch(GAS_URL,{method:'POST',headers:{'Content-Type':'text/plain;charset=utf-8'},body:JSON.stringify({action:'allocCodes',items:items.map(l=>({name:l.name,unit:l.unit})),count,by:getMyName()})});
     const j=await r.json(); if(j.ok&&j.codes&&j.codes.length>=count)return j.codes; }catch(_){} }
   return null;
 }
@@ -1663,7 +1686,7 @@ function buildMasterReg(items){
 $('dlNewReg').addEventListener('click',async()=>{
   const news=newItems(); if(!news.length){ toast('新規品はありません'); return; }
   toast('空き番号を採番中…',true);
-  const codes=await allocCodes(news.length);
+  const codes=await allocCodes(news);
   if(!codes){ toastDone('採番に失敗（GAS接続を確認）'); return; }
   news.forEach((l,i)=>{ l.code=codes[i]; l.verdict='ok'; });   // 見積側にも採番コードを反映
   const regItems=news.map(l=>({code:l.code,name:l.name,unit:l.unit}));
@@ -1892,6 +1915,44 @@ async function refreshSeqNow(){
   });
 })();
 
+// ===== 新規商品コード管理（一覧・解放） =====
+let CODES_CACHE=[], cFilter='active';
+async function loadCodeList(){
+  if(!GAS_URL){ renderCodeRows([]); return; }
+  showLoading('読み込み中…');
+  try{ const r=await fetch(GAS_URL,{method:'POST',headers:{'Content-Type':'text/plain;charset=utf-8'},body:JSON.stringify({action:'listCodes'})});
+    const j=await r.json(); CODES_CACHE=(j&&j.ok&&j.items)?j.items:[]; renderCodeRows(CODES_CACHE);
+  }catch(_){ renderCodeRows([]); } finally{ hideLoading(); }
+}
+function renderCodeRows(all){
+  const tb=$('codesRows'); if(!tb)return;
+  const list=all.filter(it=> cFilter==='active' ? it.status==='採番' : it.status!=='採番');
+  const stat=$('codesStat'); if(stat)stat.textContent=`${list.length}件`;
+  tb.innerHTML=list.length?list.map(it=>{
+    const canRel=it.status==='採番';
+    return `<tr><td class="l mono">${esc(it.code)}</td><td class="l" style="white-space:normal">${esc(it.name||'')}</td><td class="l">${esc(it.issued||'')}</td><td class="l">${esc(it.by||'')}</td><td class="l">${esc(it.status||'')}</td>`+
+      `<td>${canRel?`<button type="button" class="delrow" data-crel="${esc(it.code)}" title="この番号を解放">×</button>`:''}</td></tr>`;
+  }).join(''):`<tr><td colspan="6" class="hint" style="padding:8px">${cFilter==='active'?'採番中の商品コードはありません':'解放・登録済の履歴はありません'}</td></tr>`;
+}
+async function releaseCodeNo(code){
+  if(!confirm(`商品コード ${code} を解放しますか？\n\n次の新規採番で再利用されます。\n※弥生の商品台帳に取り込み済みの番号は解放しないでください。`))return;
+  if(!GAS_URL){ toast('GAS未接続'); return; }
+  showLoading('解放中…');
+  try{ const r=await fetch(GAS_URL,{method:'POST',headers:{'Content-Type':'text/plain;charset=utf-8'},body:JSON.stringify({action:'releaseCode',code})});
+    const j=await r.json();
+    if(j&&j.ok){ toast('解放しました'); loadCodeList(); }
+    else toast('解放できませんでした。Code.gsを再デプロイしてください');
+  }catch(_){ toast('解放に失敗（通信エラー）'); } finally{ hideLoading(); }
+}
+(function(){
+  const tb=$('codesRows'); if(tb)tb.addEventListener('click',e=>{ const b=e.target.closest('[data-crel]'); if(b)releaseCodeNo(b.dataset.crel); });
+  document.querySelectorAll('.ctab').forEach(t=>t.addEventListener('click',()=>{
+    document.querySelectorAll('.ctab').forEach(x=>x.classList.toggle('on',x===t));
+    cFilter=t.dataset.ctab; renderCodeRows(CODES_CACHE);
+  }));
+  if($('codesReload'))$('codesReload').addEventListener('click',loadCodeList);
+})();
+
 // ===== 名寄せの学習データ管理（一覧・個別削除） =====
 function renderLearnRows(){
   const tb=$('lrnRows'); if(!tb)return;
@@ -1997,7 +2058,7 @@ function showStep(n){
   sec.classList.add(back?'anim-back':'anim-fwd');
   if(n===1||n===2){ peekQuoteNo(); }   // ①・②で次の番号（目安）を更新
   if(n===3){ $('csvOut').textContent=buildCsv(); $('csvOut').hidden=false; updateNewRegCard(); }
-  if(n===5){ loadQuoteList(); fillLearnSupSel(); renderLearnRows(); refreshSeqNow(); }   // 見積番号管理＋学習データ＋開始番号
+  if(n===5){ loadQuoteList(); fillLearnSupSel(); renderLearnRows(); refreshSeqNow(); loadCodeList(); }   // 見積番号管理＋学習データ＋開始番号＋商品コード
   curStep=n;
   window.scrollTo({top:0,behavior:'smooth'});
 }
