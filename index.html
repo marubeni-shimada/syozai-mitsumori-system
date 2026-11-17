@@ -620,32 +620,38 @@ const MASTER = [["0023", "側溝用ｸﾞﾚｰﾁﾝｸﾞ", "台"], ["0034", "
 
 // ===== 名寄せロジック（gen.py と同一） =====
 const NFKC = s => (s||'').normalize('NFKC').replace(/×/g,'*').replace(/Φ/g,'φ').toLowerCase().replace(/\s+/g,' ').trim();
-function feats(s){ s=NFKC(s); const f=new Set();
-  if(s.includes('グレーチング'))f.add('種:グレーチング');
-  if(s.includes('ステンレス'))f.add('材:ステンレス');
-  if(s.includes('受枠'))f.add('型:受枠'); if(s.includes('四方枠'))f.add('型:四方枠');
-  if(s.includes('細目'))f.add('目:細'); if(s.includes('普通目')||s.includes('(普)'))f.add('目:普');
-  let m; const re1=/みぞ幅\s*(\d+)/g; while(m=re1.exec(s))f.add('みぞ幅:'+m[1]);
-  const re2=/桝穴\s*(\d+)\s*\*\s*(\d+)/g; while(m=re2.exec(s))f.add('桝穴:'+m[1]+'*'+m[2]);
-  const re3=/t-?\s*(\d+)/g; while(m=re3.exec(s))f.add('T:'+m[1]);
-  const re4=/\bl\s*=?\s*(\d{2,4})\b/g; while(m=re4.exec(s))f.add('L:'+m[1]);
-  const re5=/枠外\s*(\d+)\s*\*\s*(\d+)/g; while(m=re5.exec(s))f.add('枠外:'+m[1]+'*'+m[2]);
+// ===== 汎用照合（品名を問わない。文字bigram類似＋寸法スペック） =====
+function canonN(s){ s=NFKC(s).toLowerCase().replace(/[×✕]/g,'*').replace(/(\d)x(?=\d)/g,'$1*');
+  return s.replace(/[\s　,，、。.・\/｜|()（）【】\[\]\-ー－=＝:：]/g,''); }
+function bigrams(s){ const g=new Set(); if(s.length<2){ if(s)g.add(s); return g; }
+  for(let i=0;i<s.length-1;i++)g.add(s.substr(i,2)); return g; }
+function diceSim(a,b){ if(!a.size||!b.size)return 0; let n=0; a.forEach(x=>{if(b.has(x))n++;}); return 2*n/(a.size+b.size); }
+function specsOf(s){ s=NFKC(s).toLowerCase(); const f=new Set(); let m,re;
+  re=/(\d+)\s*\*\s*(\d+)(?:\s*\*\s*(\d+))?/g; while(m=re.exec(s))f.add('dim:'+[m[1],m[2],m[3]].filter(Boolean).join('x'));
+  re=/t-?\s*(\d+)/g; while(m=re.exec(s))f.add('t:'+m[1]);
+  re=/l\s*=?\s*(\d{2,4})/g; while(m=re.exec(s))f.add('l:'+m[1]);
+  re=/re-?\s*(\d+)/g; while(m=re.exec(s))f.add('re:'+m[1]);
+  re=/(\d+)用/g; while(m=re.exec(s))f.add('用:'+m[1]);
+  re=/みぞ幅\s*(\d+)/g; while(m=re.exec(s))f.add('みぞ幅:'+m[1]);
+  re=/桝穴\s*(\d+)\s*\*\s*(\d+)/g; while(m=re.exec(s))f.add('桝穴:'+m[1]+'x'+m[2]);
   return f; }
-const W={'みぞ幅':5,'桝穴':5,'枠外':4,'種':3,'材':2,'型':4,'T':2,'目':1,'L':3};
-const wof=t=>W[t.split(':')[0]]||1;
-function score(qf,cf){ let s=0; qf.forEach(t=>{if(cf.has(t))s+=wof(t)}); let pen=0;
-  ['みぞ幅','桝穴','T','枠外','材','型'].forEach(k=>{
-    const qv=[...qf].filter(t=>t.startsWith(k+':')), cv=[...cf].filter(t=>t.startsWith(k+':'));
-    if(qv.length&&cv.length&&!qv.some(x=>cv.includes(x)))pen+=wof(k+':x'); });
-  return s-pen; }
-const MF = MASTER.map(([c,n,u])=>({code:c,name:n,unit:u,f:feats(n)}));
+function prep(name){ return {bi:bigrams(canonN(name)), sp:specsOf(name)}; }
+function scorePrep(q, mp, qunit, munit){
+  let s=diceSim(q.bi,mp.bi)*10, hit=0, miss=0;
+  q.sp.forEach(x=>{ const k=x.split(':')[0];
+    if(mp.sp.has(x))hit++;
+    else if([...mp.sp].some(y=>y.startsWith(k+':')))miss++; });
+  s+=hit*1.5-miss*2.0;
+  if(qunit&&munit&&qunit===munit)s+=0.5;
+  return s; }
+const MF = MASTER.map(([c,n,u])=>({code:c,name:n,unit:u,p:prep(n)}));
 function matchTop(name,unit,k=5){
-  const qf=feats(name);
-  const sc=MF.map(m=>({code:m.code,name:m.name,unit:m.unit,s:score(qf,m.f)+(m.unit===unit?1:0)}))
-            .filter(x=>x.s>0).sort((a,b)=>b.s-a.s).slice(0,k);
+  const q=prep(name);
+  const sc=MF.map(m=>({code:m.code,name:m.name,unit:m.unit,s:Math.round(scorePrep(q,m.p,unit,m.unit)*100)/100}))
+            .filter(x=>x.s>=2).sort((a,b)=>b.s-a.s).slice(0,k);
   let verdict='new';
   if(sc.length){ const gap = sc.length>1 ? sc[0].s-sc[1].s : 99;
-    if(sc[0].s>=8 && gap>=2) verdict='ok';
+    if(sc[0].s>=7 && gap>=1) verdict='ok';
     else if(sc[0].s>=4) verdict='chk'; }
   return {cand:sc,verdict};
 }
