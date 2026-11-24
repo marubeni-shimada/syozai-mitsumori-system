@@ -508,10 +508,11 @@
     <h2 style="color:var(--warn)">新規品の台帳登録（先に実施）</h2>
     <p class="warn-box" id="newRegMsg"></p>
     <div class="row">
-      <button type="button" id="dlNewReg">新規品の台帳登録ファイルを出力</button>
+      <button type="button" id="dlNewReg">新規品に空き番号を採番</button>
+      <button type="button" class="ghost" id="dlNewRegFile">この内容で台帳登録ファイルを出力</button>
       <span class="hint">0001〜9999の空き番号を若い順に自動採番します。</span>
     </div>
-    <div class="tablewrap" id="newRegWrap" hidden style="margin-top:10px"><table style="min-width:420px"><thead><tr><th class="l">採番コード</th><th class="l">品名</th><th>単位</th></tr></thead><tbody id="newRegRows"></tbody></table></div>
+    <div class="tablewrap" id="newRegWrap" hidden style="margin-top:10px"><table style="min-width:620px"><thead><tr><th class="l">採番コード</th><th class="l">台帳に登録する名称（直せます）</th><th>単位</th><th class="l">PDFの品名（見積書に出る方）</th></tr></thead><tbody id="newRegRows"></tbody></table></div>
     <p class="hint" style="margin-top:12px"><b>弥生 商品台帳への登録手順</b>（登録してから見積を取り込みます）</p>
     <ol class="steps" style="margin-top:6px">
       <li>弥生販売で <b>［ファイル］→［インポート］→［台帳インポート］</b> → ウィザードで［次へ］</li>
@@ -584,6 +585,7 @@
           <button type="button" id="fmtRangeStart">まとめて範囲指定</button>
           <span class="hint" style="margin:0">個別に直す：</span>
           <button type="button" class="ghost sm" data-only="name" style="color:#2f6fb0">品名</button>
+          <button type="button" class="ghost sm" data-only="spec" style="color:#7a4fb0">規格</button>
           <button type="button" class="ghost sm" data-only="qty" style="color:#9a5b00">数量</button>
           <button type="button" class="ghost sm" data-only="unit" style="color:#0d6a49">単位</button>
           <button type="button" class="ghost sm" data-only="price" style="color:#b23b3b">単価</button>
@@ -1064,6 +1066,16 @@ let SUPFOLD={};
 const grpKey=l=>String(l.batch==null?('s:'+(l.supplier||'')):l.batch);
 function grpList(){ const out=[]; LINES.forEach(l=>{ if(l.kind!=='item')return;
   const k=grpKey(l); if(!out.some(g=>g.key===k)) out.push({key:k, sup:l.supplier||'', src:l.src||''}); }); return out; }
+// PDFに書かれた合計と、読み取った仕入合計を突き合わせる（行の読み落とし検出）
+function totalCheckTag(key,readTotal){
+  const info=BATCHINFO[key]; if(!info||!info.pdfTotal)return '';
+  const pt=info.pdfTotal, diff=Math.round(readTotal-pt);
+  if(Math.abs(diff)<=1) return `<span class="tag ok" title="PDFの合計 ¥${pt.toLocaleString()} と一致">合計一致</span>`;
+  const tax=Math.round(readTotal*1.1);
+  if(Math.abs(tax-pt)<=Math.max(2,pt*0.0002)) return `<span class="tag ok" title="PDFの合計は税込 ¥${pt.toLocaleString()}">合計一致（税込）</span>`;
+  return `<span class="tag dup" title="PDFの合計 ¥${pt.toLocaleString()} ／ 読み取り ¥${Math.round(readTotal).toLocaleString()}。行が落ちているか、数量・単価の読み違いの可能性があります">`+
+    `合計が ¥${Math.abs(diff).toLocaleString()} ${diff<0?'少ない':'多い'}</span>`;
+}
 function grpTotals(key){ let n=0,c=0,s=0;
   LINES.forEach(l=>{ if(l.kind!=='item'||grpKey(l)!==key)return; n++; c+=l.cost*l.qty; s+=lineSell(l)*l.qty; });
   return {n,c,s}; }
@@ -1173,6 +1185,7 @@ function render(animate){
         `<input class="supname" data-sup="${esc(gk)}" value="${esc(g.sup)}" placeholder="会社名を入力" style="border:1px solid var(--line);background:var(--bg,#fff);color:var(--accent);font-weight:700;border-radius:6px;padding:3px 8px;min-width:200px;font-size:.9rem;text-align:left">`+
         (sfx?`<span style="color:var(--accent);font-weight:700;font-size:.85rem" title="${esc(g.src||'')}">${esc(sfx)}</span>`:'')+
         `<span class="hint" style="margin:0">${st.n}件 ／ 仕入 ¥${st.c.toLocaleString()} ／ 売上 ¥${st.s.toLocaleString()}</span>`+
+        totalCheckTag(gk,st.c)+
         `<button class="delrow supdel" data-supdel="${esc(gk)}" title="このぶんの明細をまとめて削除" style="margin-left:auto">×</button>`+
         `</span></td>`;
       tb.appendChild(hr);
@@ -1695,7 +1708,7 @@ const SAMPLE=[
  ['item','グレーチング 四方枠 みぞ幅100用 枠外200*2445','台',1,28000],
  ['cond','（見積条件）※スチールアングルのL45*45はないのでL50*50で見積しています','',0,0],
 ];
-let BATCH_SEQ=0;   // 読み込んだPDF（ファイル）ごとの通し番号。同じ仕入先でも枚数で分けて表示するため
+let BATCH_SEQ=0; const BATCHINFO={};   // 読み込んだPDFごとの情報（ファイル名・PDFに書かれた合計）   // 読み込んだPDF（ファイル）ごとの通し番号。同じ仕入先でも枚数で分けて表示するため
 function loadLines(arr,opts){
   opts=opts||{};
   const sup=('supplier' in opts)?(opts.supplier||''):curSupplier;
@@ -1715,6 +1728,20 @@ pdfjsLib.GlobalWorkerOptions.workerSrc='https://cdnjs.cloudflare.com/ajax/libs/p
 // 日本語（CJK）の表示・抽出に必要なCMap/標準フォント
 const PDF_OPTS={cMapUrl:'https://cdn.jsdelivr.net/npm/pdfjs-dist@3.11.174/cmaps/',cMapPacked:true,standardFontDataUrl:'https://cdn.jsdelivr.net/npm/pdfjs-dist@3.11.174/standard_fonts/'};
 // PDFを解析して {parsed, fmt, mode, generic, supplier} を返す（読込・追加読込で共用）
+// PDFに書いてある合計金額を拾う（読み落としの検出に使う）
+function findPdfTotal(pagesWords){
+  let best=null;
+  (pagesWords||[]).forEach(words=>{
+    clusterRows(words).forEach(r=>{
+      const j=r.items.slice().sort((a,b)=>a.x0-b.x0).map(w=>w.text).join('');
+      if(!/合\s*計|御見積金額|お見積金額|見積金額|総額/.test(j))return;
+      if(/小\s*計|前ページ/.test(j))return;
+      const nums=(j.match(/[\d,]+/g)||[]).map(x=>parseInt(x.replace(/,/g,''),10)).filter(n=>n>=1000);
+      if(nums.length){ const m=Math.max.apply(null,nums); best=(best==null)?m:Math.max(best,m); }
+    });
+  });
+  return best;
+}
 async function parsePdfFile(file){
   const buf=await file.arrayBuffer(); const pdf=await pdfjsLib.getDocument({data:buf,...PDF_OPTS}).promise;
   const PAGES=[];
@@ -1722,7 +1749,7 @@ async function parsePdfFile(file){
     const page=await pdf.getPage(p); const vp=page.getViewport({scale:1});
     const tc=await page.getTextContent();
     const words=tc.items.filter(it=>it.str.trim()).map(it=>({
-      x0:it.transform[4], top:vp.height-it.transform[5], text:it.str.trim() }));
+      x0:it.transform[4], x1:it.transform[4]+(it.width||0), top:vp.height-it.transform[5], text:it.str.trim() }));
     PAGES.push(words);
   }
   const fsel=$('readFormat');
@@ -1736,7 +1763,7 @@ async function parsePdfFile(file){
     if(!parsed.some(r=>r[0]==='item')){ const c=detectCols(PAGES[0]); if(c){ parsed=run(c); mode='自動推測'; } } }
   let generic=false;
   if(!parsed.some(r=>r[0]==='item')){ parsed=[]; PAGES.forEach(w=>{parsed=parsed.concat(parseGeneric(w));}); generic=true; mode='汎用'; }
-  return {parsed,fmt,mode,generic,supplier:fmt?fmt.name:detectSupplierName(PAGES[0]),hdr:extractHeader(PAGES[0])};
+  return {parsed,fmt,mode,generic,supplier:fmt?fmt.name:detectSupplierName(PAGES[0]),hdr:extractHeader(PAGES[0]),pdfTotal:findPdfTotal(PAGES)};
 }
 // 1枚目のPDFから拾ったヘッダを②の入力欄へ（拾えた項目だけ入れる）
 function applyPdfHeader(hdr){
@@ -1777,10 +1804,12 @@ async function processPdfFiles(fileList){
         if($('hSupplier')) $('hSupplier').value=sup;   // 新しいPDF＝前回の仕入先名は必ず上書き
         applyPdfHeader(hdr);   // 件名・納入場所・有効期限は1枚目のPDFから
         flashAuto(['hSupplier','hKenmei','hNohin','hYuko']); markRequired();
-        loadLines(parsed,{supplier:sup,src:file.name||'',defer:true}); replaced=true;
+        { const bt=++BATCH_SEQ; BATCHINFO[bt]={src:file.name||'',pdfTotal:res.pdfTotal};
+          loadLines(parsed,{supplier:sup,src:file.name||'',batch:bt,defer:true}); } replaced=true;
       } else {
         curSupplier=sup;
-        loadLines(parsed,{supplier:sup,src:file.name||'',append:true,defer:true});
+        const bt=++BATCH_SEQ; BATCHINFO[bt]={src:file.name||'',pdfTotal:res.pdfTotal};
+        loadLines(parsed,{supplier:sup,src:file.name||'',batch:bt,append:true,defer:true});
       }
       total+=parsed.filter(r=>r[0]==='item').length; nfile++;
     }
@@ -1815,7 +1844,8 @@ async function addPdfFiles(fileList){
       if(!parsed.some(r=>r[0]==='item')) continue;
       const sup=askSupplier(supplier,file,idx+1,files.length);   // 自動判別できなければ会社名を入力
       curSupplier=sup;
-      loadLines(parsed,{supplier:sup,src:file.name||'',append:true,defer:true});   // 得意先・見積番号・見積日はそのまま、明細だけ追記
+      const bt=++BATCH_SEQ; BATCHINFO[bt]={src:file.name||'',pdfTotal:res.pdfTotal};
+      loadLines(parsed,{supplier:sup,src:file.name||'',batch:bt,append:true,defer:true});   // 得意先・見積番号・見積日はそのまま、明細だけ追記
       total+=parsed.filter(r=>r[0]==='item').length; nfile++;
     }
     if(total) resolveAll();   // 追加後にまとめて名寄せ
@@ -1843,31 +1873,58 @@ function toRanges(c){
   if(c.qty&&Array.isArray(c.qty))return c;  // すでに範囲
   return {name:[c.name0,c.qty0], qty:[c.qty0,c.unit0], unit:[c.unit0,c.price0], price:[c.price0,c.amount0]};
 }
+const hasRange=r=>Array.isArray(r)&&r.length===2&&r[1]>r[0];
 function parsePage(words, cols){
   const C=toRanges(cols);
   const out=[]; const rows=clusterRows(words);
+  const useSpec=hasRange(C.spec);   // 規格列を指定した書式だけ、折り返し行も拾う
   const band=(toks,a,b)=>toks.filter(w=>w.x0>=a&&w.x0<b).sort((x,y)=>x.x0-y.x0).map(w=>w.text);
+  // 間隔が狭い語はつなぐ（「ｸﾞ ﾚｰﾁﾝｸ ﾞ」→「ｸﾞﾚｰﾁﾝｸﾞ」）
+  const bandJoin=(toks,a,b)=>{ const ws=toks.filter(w=>w.x0>=a&&w.x0<b).sort((x,y)=>x.x0-y.x0);
+    let s2=''; ws.forEach((w,i)=>{ if(i){ const prev=ws[i-1]; const gap=w.x0-(prev.x1!=null?prev.x1:prev.x0);
+      if(!(prev.x1!=null)||gap>1.6)s2+=' '; } s2+=w.text; }); return s2.trim(); };
   const info=[]; let started=false;
   for(const r of rows){
     const joined=r.items.slice().sort((a,b)=>a.x0-b.x0).map(w=>w.text).join('');
     if(!started){ if((joined.includes('No.')||joined.includes('品名'))&&joined.includes('数量'))started=true; info.push(['skip']); continue; }
     if(joined.includes('合計')||joined.includes('備考:')||/^\d+\/\d+$/.test(joined)){ info.push(['skip']); continue; }
-    let name=band(r.items,C.name[0],C.name[1]).join(' ').trim(); name=name.replace(/\s*(納期|実働).*$/,'').trim();
+    let name=bandJoin(r.items,C.name[0],C.name[1]); name=name.replace(/\s*(納期|実働).*$/,'').trim();
+    const spec=useSpec?bandJoin(r.items,C.spec[0],C.spec[1]):'';
     const qty=band(r.items,C.qty[0],C.qty[1]).map(nz).filter(t=>/^[\d,]+$/.test(t));
     const unit=band(r.items,C.unit[0],C.unit[1]).map(nz);
     const price=band(r.items,C.price[0],C.price[1]).map(nz).filter(t=>/^[\d,]+$/.test(t));
     const noise = name==='分割になります'||name.startsWith('※')||name.startsWith('(見積条件)')||name.startsWith('（見積条件');
-    if(name.startsWith('【')) info.push(['sec',name]);
-    else if(qty.length&&unit.length&&price.length) info.push(['num',name,unit[0],parseInt(qty[0].replace(/,/g,'')),parseInt(price[0].replace(/,/g,''))]);
-    else if(name&&!noise) info.push(['name',name]);
-    else info.push(['skip']);
+    const top=r.items.length?Math.min.apply(null,r.items.map(w=>w.top)):0;
+    if(name.startsWith('【')) info.push(['sec',name,'',0,0,'',top]);
+    else if(qty.length&&unit.length&&price.length) info.push(['num',name,unit[0],parseFloat(qty[0].replace(/,/g,'')),parseInt(price[0].replace(/,/g,'')),spec,top]);
+    else if((name||spec)&&!noise) info.push(['name',name,spec,0,0,'',top]);
+    else info.push(['skip','','',0,0,'',top]);
+  }
+  // 折り返しの行を、いちばん近い明細行に割り当てる（規格が上下に折り返す書式に対応）
+  const owner={};
+  if(useSpec){
+    const numIdx=info.map((t,i)=>t[0]==='num'?i:-1).filter(i=>i>=0);
+    info.forEach((t,i)=>{ if(t[0]!=='name'||!numIdx.length)return;
+      let best=numIdx[0], bd=Infinity;
+      numIdx.forEach(ni=>{ const d=Math.abs((info[ni][6]||0)-(t[6]||0)); if(d<bd){bd=d;best=ni;} });
+      // 近い明細が無い（離れすぎ）行は注記とみなして捨てる
+      if(bd<=14)(owner[best]=owner[best]||[]).push(i); });
   }
   info.forEach((t,idx)=>{
     if(t[0]==='sec') out.push(['sec',t[1],'',0,0]);
     else if(t[0]==='num'){
-      const names=t[1]?[t[1]]:[]; let j=idx-1;
-      while(j>=0&&info[j][0]==='name'&&names.length<3){ names.unshift(info[j][1]); j--; }
-      const full=names.join(' ').replace(/\s+/g,' ').trim();
+      let names=[], specs=[];
+      if(useSpec){
+        const mine=(owner[idx]||[]).slice().sort((a,b)=>a-b);
+        const before=mine.filter(i=>i<idx), after=mine.filter(i=>i>idx);
+        before.forEach(i=>{ if(info[i][1])names.push(info[i][1]); if(info[i][2])specs.push(info[i][2]); });
+        if(t[1])names.push(t[1]); if(t[5])specs.push(t[5]);
+        after.forEach(i=>{ if(info[i][1])names.push(info[i][1]); if(info[i][2])specs.push(info[i][2]); });
+      }else{
+        names=t[1]?[t[1]]:[]; let j=idx-1;            // 従来どおり：上に続く行だけ拾う
+        while(j>=0&&info[j][0]==='name'&&names.length<3){ names.unshift(info[j][1]); j--; }
+      }
+      const full=names.concat(specs).join(' ').replace(/\s+/g,' ').trim();
       if(full&&t[4]>0) out.push(['item',full,t[2],t[3],t[4]]);
     }
   });
@@ -2070,7 +2127,8 @@ const SEC_NOISE=/以下余白|特記事項|^頁$|^No|小計|^合計|^以下$|^�
 // 先頭の行番号(単独数字)だけ落とし、残り（数字含む）を連結した行テキスト
 function lineText(toks){ const t=toks.slice(); if(t.length&&/^[\d,]+$/.test(t[0]))t.shift(); return t.filter(x=>UNITS.indexOf(x)<0).join(''); }
 function parseGeneric(words){
-  const out=[]; const rows=clusterRows(words); let buf='',started=false;
+  const out=[]; const rows=clusterRows(words);
+  let buf='',started=false;
   const isNum=t=>/^[\d,]+(\.\d+)?$/.test(t);              // 小数の数量も許可
   const numv=t=>parseFloat(String(t).replace(/,/g,''));
   const flushSec=()=>{ if(buf&&!SEC_NOISE.test(buf)&&buf.length>=3) out.push(['sec',buf,'',0,0]); buf=''; };
@@ -2125,6 +2183,8 @@ function buildCsv(){
     return r; };
   const zeros=r=>{ r[18]='0';r[20]='0';r[21]='0';['23','24','25','27','28','29'].forEach(c=>r[+c]='0');r[31]='0';r[32]='0'; };
   const push=r=>{ ln++; r[13]=String(ln); rows.push(r.map(v=>`"${String(v).replace(/"/g,'""')}"`).join(',')); };
+  // 小数の数量で 10420×1.1=11462.000000000002 のような誤差が出るため、小数2桁で丸めて書き出す
+  const num=x=>{ const v=Math.round((Number(x)||0)*100)/100; return String(v); };
   // 本体：仕入先が2社以上のときだけ、切り替わりで種別6（会社名の見出し）を入れる
   const supList=[...new Set(LINES.filter(l=>l.kind==='item').map(l=>l.supplier||H.supplier||''))];
   const multiSupCsv=supList.length>1;
@@ -2140,7 +2200,7 @@ function buildCsv(){
     if(l.kind==='item'){
       const r=base(); const sell=lineSell(l), amt=sell*l.qty, camt=l.cost*l.qty;
       r[14]='1';r[15]=l.code||'';r[17]=l.name;r[18]='13';r[19]=l.unit;r[20]='0';r[21]='0';r[22]='0000';
-      r[23]=String(l.qty);r[24]=String(sell);r[25]=String(amt);r[27]=String(amt);r[28]=String(camt);r[29]=String(l.cost);r[31]='2';r[32]='2';
+      r[23]=num(l.qty);r[24]=num(sell);r[25]=num(amt);r[27]=num(amt);r[28]=num(camt);r[29]=num(l.cost);r[31]='2';r[32]='2';
       push(r);
     } else {
       const r=base(); r[14]='5'; r[17]=l.name; zeros(r); push(r);   // 摘要・注記行＝種別5
@@ -2176,6 +2236,7 @@ function buildMasterReg(items){
     return r.map(v=>`"${String(v).replace(/"/g,'""')}"`).join(','); });
   return rows.join('\r\n')+'\r\n';
 }
+let REGITEMS=[];   // 採番した新規品（台帳に登録する名称は、見積の品名とは別に持つ）
 $('dlNewReg').addEventListener('click',async()=>{
   const news=newItems(); if(!news.length){ toast('新規品はありません'); return; }
   // 同じ品名＋単位は同じ商品なので、1つにまとめて1つの番号を取る（行ごとに別番号を振らない）
@@ -2188,20 +2249,38 @@ $('dlNewReg').addEventListener('click',async()=>{
   if(!codes){ toastDone('採番に失敗（GAS接続を確認）'); return; }
   groups.forEach((g,i)=>{ g.code=codes[i]; g.lines.forEach(l=>{ l.code=codes[i]; l.verdict='ok'; }); });
   const dup=news.length-groups.length;
-  const regItems=groups.map(g=>({code:g.code,name:g.name,unit:g.unit}));
-  // 登録ファイルをダウンロード（Shift-JIS）
-  const blob=toSjisBlob(buildMasterReg(regItems)); const a=document.createElement('a');
+  // 台帳に登録する名称の初期値はPDFの品名。ここで自社の書き方に直してから出力する
+  REGITEMS=groups.map(g=>({code:g.code,name:g.name,unit:g.unit,src:g.name}));
+  renderRegRows();
+  $('newRegWrap').hidden=false;
+  $('newRegMsg').innerHTML=`<b>${REGITEMS.length}件に空き番号を採番しました（${REGITEMS.map(i=>i.code).join(', ')}）。</b>`+
+    (dup?`　※同じ品名の行が ${dup}行 あったので、同じ商品として1つの番号にまとめました。`:'')+
+    `　<b>台帳に載せる名称を、自社の書き方に直してから出力してください。</b>見積書に出る品名はPDFのままで変わりません。`;
+  render();
+  toastDone(`新規品 ${REGITEMS.length}件を採番しました。名称を確認して出力してください`);
+});
+function renderRegRows(){
+  const tb=$('newRegRows'); if(!tb)return;
+  tb.innerHTML=REGITEMS.map((it,i)=>`<tr>`+
+    `<td class="l mono">${esc(it.code)}</td>`+
+    `<td class="l"><input class="regname" data-ri="${i}" value="${esc(it.name)}" style="width:100%;min-width:260px"></td>`+
+    `<td><input class="regunit" data-ri="${i}" value="${esc(it.unit||'')}" style="width:60px"></td>`+
+    `<td class="l hint" title="${esc(it.src)}">${esc(it.src)}</td></tr>`).join('');
+}
+if($('newRegRows'))$('newRegRows').addEventListener('input',e=>{
+  const el=e.target, i=+el.dataset.ri; if(isNaN(i)||!REGITEMS[i])return;
+  if(el.classList.contains('regname'))REGITEMS[i].name=el.value;
+  else if(el.classList.contains('regunit'))REGITEMS[i].unit=el.value;
+});
+if($('dlNewRegFile'))$('dlNewRegFile').addEventListener('click',()=>{
+  if(!REGITEMS.length){ toast('先に採番してください'); return; }
+  const empty=REGITEMS.filter(it=>!String(it.name||'').trim());
+  if(empty.length){ toast('名称が空の行があります'); return; }
+  const blob=toSjisBlob(buildMasterReg(REGITEMS)); const a=document.createElement('a');
   const d=new Date(); a.href=URL.createObjectURL(blob);
   a.download=`shohin_touroku_${d.getFullYear()}${('0'+(d.getMonth()+1)).slice(-2)}${('0'+d.getDate()).slice(-2)}.txt`;
   a.click(); setTimeout(()=>URL.revokeObjectURL(a.href),1000);
-  // プレビュー表示＋注意
-  $('newRegWrap').hidden=false;
-  $('newRegRows').innerHTML=regItems.map(it=>`<tr><td class="l mono">${it.code}</td><td class="l">${esc(it.name)}</td><td>${esc(it.unit)}</td></tr>`).join('');
-  $('newRegMsg').innerHTML=`<b>${regItems.length}件に空き番号を自動採番しました（${regItems.map(i=>i.code).join(', ')}）。</b>`+
-    (dup?`　※同じ品名の行が ${dup}行 あったので、同じ商品として1つの番号にまとめました。`:'')+
-    ` このファイルを弥生の［台帳インポート］で登録してから、下の見積取込ファイルを取り込んでください。`;
-  render(); // 見積プレビュー更新
-  toastDone(`新規品 ${regItems.length}件を採番・出力しました`);
+  toastDone(`台帳登録ファイルを出力しました（${REGITEMS.length}件）`);
 });
 // 弥生はShift-JIS指定。UTF-8のままだと半角カナ等が化けるためSJISで書き出す
 function toSjisBlob(text){
@@ -2603,7 +2682,7 @@ async function fmtLoadPdf(file){
   fmtPagesWords=[];
   for(let p=1;p<=fmtPdfDoc.numPages;p++){
     const pg=await fmtPdfDoc.getPage(p); const b=pg.getViewport({scale:1}); const tc=await pg.getTextContent();
-    fmtPagesWords.push(tc.items.filter(it=>it.str.trim()).map(it=>({x0:it.transform[4],top:b.height-it.transform[5],text:it.str.trim()})));
+    fmtPagesWords.push(tc.items.filter(it=>it.str.trim()).map(it=>({x0:it.transform[4],x1:it.transform[4]+(it.width||0),top:b.height-it.transform[5],text:it.str.trim()})));
   }
   // 明細ヘッダ（数量＋単価/金額）がある最初のページを初期表示にする
   const hdrPage=fmtPagesWords.findIndex(w=>{ const j=w.map(x=>x.text).join(''); return j.includes('数量')&&(j.includes('単価')||j.includes('金額')); });
@@ -2631,7 +2710,7 @@ async function fmtRenderPage(){
   drawBoxes(); fmtPreview();
 }
 // 列ごとの色付き四角を描画
-const COLDEF=[['name','#2f6fb0','品名'],['qty','#9a5b00','数量'],['unit','#0d6a49','単位'],['price','#b23b3b','単価']];
+const COLDEF=[['name','#2f6fb0','品名'],['spec','#7a4fb0','規格'],['qty','#9a5b00','数量'],['unit','#0d6a49','単位'],['price','#b23b3b','単価']];
 function drawBoxes(){
   const g=$('fmtBoxes'); if(!g)return; const h=$('fmtCanvas').height; g.innerHTML='';
   if(!fmtCols)return;
@@ -2654,12 +2733,16 @@ function fmtPreview(){
   const cap=$('fmtPreviewCap'); if(cap)cap.textContent=n?`全${src.length}ページから ${n}件 を抽出`:'';
 }
 // 範囲ドラッグ（指定した列を順に囲む。SEQは全列 or 単列）
-const COL_LABEL={name:'品名',qty:'数量',unit:'単位',price:'単価'};
-const ALL_SEQ=['name','qty','unit','price'];
+const COL_LABEL={name:'品名',spec:'規格',qty:'数量',unit:'単位',price:'単価'};
+const ALL_SEQ=['name','spec','qty','unit','price'];   // 規格が無い書式は飛ばしてよい
 let rangeMode=false, rangeSeq=[], rangeIdx=0, rStartX=null, rubber=null;
 function startRange(seq){ if(!fmtWords){toast('先にPDFを読み込んでください');return;} rangeSeq=seq||ALL_SEQ.slice(); rangeMode=true; rangeIdx=0; promptRange(); }
 function promptRange(){ const k=rangeSeq[rangeIdx];
-  $('fmtRangeHint').innerHTML=`<b>範囲指定（${rangeIdx+1}/${rangeSeq.length}）：</b>「<b style="color:var(--accent)">${COL_LABEL[k]}</b>」の列を横方向にドラッグで囲んでください`; }
+  $('fmtRangeHint').innerHTML=`<b>範囲指定（${rangeIdx+1}/${rangeSeq.length}）：</b>「<b style="color:var(--accent)">${COL_LABEL[k]}</b>」の列を横方向にドラッグで囲んでください`
+    +(k==='spec'?`　<button type="button" class="ghost sm" id="fmtSkipSpec">規格の列は無い（飛ばす）</button>`:'');
+  const sk=$('fmtSkipSpec'); if(sk)sk.addEventListener('click',()=>{ if(!fmtCols)fmtCols={}; delete fmtCols.spec;
+    rangeIdx++; drawBoxes(); fmtPreview();
+    if(rangeIdx>=rangeSeq.length){ rangeMode=false; $('fmtRangeHint').textContent='範囲を指定しました。プレビューを確認して、会社名を入れて保存してください。'; } else promptRange(); }); }
 function bindFormatTab(){
   $('fmtPdf').addEventListener('change',e=>{ const f=e.target.files[0]; if(f){ fmtCols=null; fmtLoadPdf(f); } e.target.value=''; });
   if($('fmtPrev'))$('fmtPrev').addEventListener('click',async()=>{ if(fmtPageNo>1){ fmtPageNo--; await fmtRenderPage(); } });
