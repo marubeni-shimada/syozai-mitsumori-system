@@ -67,12 +67,13 @@
   .tablewrap{overflow-x:auto;border:1px solid var(--line);border-radius:10px}
   .itemtable td:last-child,.itemtable th:last-child{position:sticky;right:0;background:var(--surface);z-index:2;box-shadow:-6px 0 6px -5px rgba(0,0,0,.18)}
   .mschip{border:1px solid var(--line);background:var(--bg);color:var(--fg);padding:4px 10px;border-radius:7px;cursor:pointer;font-size:.82rem;max-width:120px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;text-align:left;vertical-align:middle}
-  .itemtable input.memo{width:96px;min-width:80px;border-color:var(--line);border-style:dashed;background:var(--bg,#fff)}
-  .itemtable input.memo::placeholder{color:transparent}
-  .itemtable tr:hover input.memo::placeholder,.itemtable input.memo:focus::placeholder{color:var(--muted)}
-  .itemtable input.memo:focus{border-style:solid}
   .itemtable input.name{min-width:150px}
-  .itemtable th.memoh{white-space:nowrap}
+  .itemtable td.kindtd{white-space:nowrap;padding-left:4px;padding-right:4px}
+  .itemtable select.kindsel{font-size:.78rem;padding:2px 2px;border:1px solid var(--line);border-radius:6px;background:var(--bg,#fff);color:var(--fg)}
+  tr.memorow td{background:#fffdf0}
+  tr.memorow select.kindsel{border-color:#d9c46a}
+  tr.memorow input.celled{color:#8a6d1a}
+  .itemtable input.name{min-width:150px}
   .mschip:hover{border-color:var(--accent);color:var(--accent)}
   #msInlineBox{position:fixed;z-index:9998;background:var(--surface);border:1px solid var(--line);border-radius:10px;box-shadow:0 12px 30px rgba(0,0,0,.26);display:none;overflow:hidden}
   #msInlineQ{width:100%;border:0;border-bottom:1px solid var(--line);padding:9px 11px;font-size:.86rem;outline:none;background:var(--surface);color:var(--fg);box-sizing:border-box}
@@ -398,8 +399,7 @@
     <div class="row" style="margin-bottom:8px">
       <button type="button" class="ghost sm" id="addFromMasterBtn">＋ 商品マスタから追加</button>
       <button type="button" class="ghost sm" id="addRow2">＋ 空の明細行</button>
-      <button type="button" class="ghost sm" id="addSec2">＋ 摘要行</button>
-      <span class="hint">入力中に <b>Enter</b>＝下に明細行／<b>Shift+Enter</b>＝下に摘要行</span>
+      <span class="hint">左の <b>＋</b> でその下に行を追加（入力中は <b>Enter</b> でも追加）／区分で 通常・摘要・メモ を切り替え</span>
       <span class="hint" id="masterLoadStat"></span>
     </div>
     <div id="msPanel" hidden style="border:1px solid var(--line);border-radius:10px;padding:10px;margin-bottom:10px;background:#fff">
@@ -415,7 +415,7 @@
         <thead><tr>
           <th class="l">区分</th><th class="l">品名／規格</th><th>数量</th><th>単位</th>
           <th>原単価</th><th>ﾏｰｼﾞﾝ%</th><th class="sell">売単価</th><th class="sell">売金額</th>
-          <th class="l memoh">メモ</th><th class="l">名寄せ（商品コード）</th><th></th>
+          <th class="l">名寄せ（商品コード）</th><th></th>
         </tr></thead>
         <tbody id="rows"></tbody>
       </table>
@@ -887,6 +887,7 @@ function openPreview(){
   const multiSupPv=new Set(LINES.filter(l=>l.kind==='item').map(l=>l.supplier||'')).size>1;
   const rows=[]; let grand=0, costAll=0; let cur=null;
   LINES.forEach(l=>{
+    if(l.kind==='memo'){ rows.push({t:'mm',nm:l.name||''}); return; }   // メモ行（社内用だけ）
     if(l.kind==='sec'){ rows.push({t:'tx',nm:l.name||''}); return; }   // 摘要行
     if(l.kind!=='item')return;
     const sup=l.supplier||'';
@@ -895,7 +896,7 @@ function openPreview(){
       cur=sup; rows.push({t:'sup',sup});          // 会社名はブロックの先頭行
     }
     const s=lineSell(l), amt=s*l.qty; grand+=amt; costAll+=l.cost*l.qty;
-    rows.push({t:'it',cd:l.code||'',nm:l.name||'',u:l.unit||'',q:l.qty,s,amt,c:l.cost,bk:'',memo:l.memo||''});
+    rows.push({t:'it',cd:l.code||'',nm:l.name||'',u:l.unit||'',q:l.qty,s,amt,c:l.cost,bk:''});
   });
   if(multiSupPv && cur!==null) rows.push({t:'bl'});   // 最後の会社のあとも空行
   const esc2=s=>String(s==null?'':s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
@@ -921,7 +922,7 @@ function openPreview(){
   const pad=`<tr class="pad"><td class="nm"></td><td></td><td></td><td></td><td></td><td class="io"></td><td class="io"></td><td></td></tr>`;
   function build(inner){
     // 会社名の行は弥生の印刷に出ないので提出用では行ごと消す（会社の区切りは終わりの空行だけ）
-    const vis=rows.filter(r=>inner||r.t!=='sup');
+    const vis=rows.filter(r=>inner||(r.t!=='sup'&&r.t!=='mm'));
     const pages=[]; let cur2=[];
     vis.forEach(r=>{ cur2.push(r); if(cur2.length>=PV_ROWS){pages.push(cur2);cur2=[];} });
     if(cur2.length||!pages.length)pages.push(cur2);
@@ -932,8 +933,9 @@ function openPreview(){
       pg.forEach(r=>{
         if(r.t==='sup'){ out+=`<tr class="supsec"><td class="nm">${esc2(r.sup||'')}</td><td></td><td></td><td></td><td></td><td class="io"></td><td class="io"></td><td></td></tr>`; }
         else if(r.t==='bl'){ out+=`<tr class="blk"><td class="nm"></td><td></td><td></td><td></td><td></td><td class="io"></td><td class="io"></td><td></td></tr>`; }
+        else if(r.t==='mm'){ out+=`<tr class="supsec"><td class="nm">※ ${esc2(r.nm)}</td><td></td><td></td><td></td><td></td><td class="io"></td><td class="io"></td><td></td></tr>`; }
         else if(r.t==='tx'){ out+=`<tr><td class="nm">${esc2(r.nm)}</td><td></td><td></td><td></td><td></td><td class="io"></td><td class="io"></td><td></td></tr>`; }
-        else { run+=r.amt; out+=`<tr><td class="nm"><span class="cd">${esc2(r.cd)}</span>${esc2(r.nm)}</td><td class="u">${esc2(r.u)}</td><td class="n">${n2(r.q)}</td><td class="n">${n2(r.s)}</td><td class="n">${n2(r.amt)}</td><td class="n io">${n2(r.c)}</td><td class="n io">${n2(r.amt-r.c*r.q)}</td><td class="bk">${inner?esc2(r.memo||''):esc2(r.bk||'')}</td></tr>`; } });
+        else { run+=r.amt; out+=`<tr><td class="nm"><span class="cd">${esc2(r.cd)}</span>${esc2(r.nm)}</td><td class="u">${esc2(r.u)}</td><td class="n">${n2(r.q)}</td><td class="n">${n2(r.s)}</td><td class="n">${n2(r.amt)}</td><td class="n io">${n2(r.c)}</td><td class="n io">${n2(r.amt-r.c*r.q)}</td><td class="bk">${esc2(r.bk||'')}</td></tr>`; } });
       const used=pg.length+(pi>0?1:0);
       for(let i=used;i<PV_ROWS+1;i++)out+=pad;
       out+=`<tr class="sum"><td class="nm"></td><td></td><td></td><td class="lb">合計</td><td class="n">${n2(run)}</td><td class="io"></td><td class="io"></td><td></td></tr></tbody></table></div>`;
@@ -1046,6 +1048,16 @@ function reorderSuppliers(fromKey,toKey){
   LINES=out;
 }
 
+// 行の左端：＋（下に空行を足す）と 区分のプルダウン（通常／摘要／メモ）
+function kindCell(i,l){
+  const k=l.kind==='sec'?'sec':(l.kind==='memo'?'memo':'item');
+  return `<td class="kindtd"><button class="addrow" data-add="${i}" title="この下に行を追加">＋</button>`+
+    `<select class="kindsel" data-kind="${i}" title="行の種類">`+
+    `<option value="item"${k==='item'?' selected':''}>通常</option>`+
+    `<option value="sec"${k==='sec'?' selected':''}>摘要</option>`+
+    `<option value="memo"${k==='memo'?' selected':''}>メモ</option>`+
+    `</select></td>`;
+}
 function render(animate){
   const tb=$('rows'); tb.innerHTML='';
   let tc=0,ts=0,ni=0,nm=0,newList=[];
@@ -1060,7 +1072,7 @@ function render(animate){
       const st=grpTotals(gk), folded=!!SUPFOLD[gk], g=groups.find(x=>x.key===gk)||{sup:'',src:''};
       const sfx=(gLab[gk]||'').replace(g.sup||'（会社名なし）','');   // 「（2枚目）」の部分
       const hr=document.createElement('tr'); hr.className='supdiv';
-      hr.innerHTML=`<td colspan="11" style="background:var(--chip,#eef2ff);padding:6px 10px;border-top:2px solid var(--accent);text-align:left">`+
+      hr.innerHTML=`<td colspan="10" style="background:var(--chip,#eef2ff);padding:6px 10px;border-top:2px solid var(--accent);text-align:left">`+
         `<span style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">`+
         `<button class="supfold" data-supfold="${esc(gk)}" title="${folded?'開く':'畳む'}" style="border:none;background:none;color:var(--accent);cursor:pointer;font-size:.8rem;padding:0 2px;transform:rotate(${folded?-90:0}deg)">▼</button>`+
         `<input class="supname" data-sup="${esc(gk)}" value="${esc(g.sup)}" placeholder="会社名を入力" style="border:1px solid var(--line);background:var(--bg,#fff);color:var(--accent);font-weight:700;border-radius:6px;padding:3px 8px;min-width:200px;font-size:.9rem;text-align:left">`+
@@ -1073,11 +1085,12 @@ function render(animate){
     const foldedRow = (l.kind==='item' && multiSup && !!SUPFOLD[gk]);   // 畳んでいるぶんの明細は表示しない（合計には入れる）
     const tr=document.createElement('tr');
     if(animate){ tr.classList.add('enter'); tr.style.animationDelay=(i*0.035)+'s'; }
-    if(l.kind==='sec'){ tr.className='sec';
+    if(l.kind==='sec'||l.kind==='memo'){ tr.className=(l.kind==='memo'?'memorow':'sec');
       if(animate){ tr.classList.add('enter'); tr.style.animationDelay=(i*0.035)+'s'; }
-      tr.innerHTML=`<td>摘要</td><td class="l" colspan="7"><input class="celled" data-i="${i}" data-k="name" value="${esc(l.name)}" placeholder="見積書に出る文字（例：【洗車場-01】）"></td>`+
-        `<td class="l"><input class="celled memo" data-i="${i}" data-k="memo" value="${esc(l.memo||'')}" placeholder="メモ"></td><td></td>`+
-        `<td><button class="addrow" data-add="${i}" title="この下に明細行を追加">＋</button><button class="addrow addsec" data-addsec="${i}" title="この下に摘要行を追加">摘</button><button class="delrow" data-del="${i}">×</button></td>`;
+      const ph = l.kind==='memo' ? '社内メモ（出力されません）' : '見積書に出る文字（例：【洗車場-01】）';
+      tr.innerHTML=kindCell(i,l)+
+        `<td class="l" colspan="8"><input class="celled" data-i="${i}" data-k="name" value="${esc(l.name)}" placeholder="${ph}"></td>`+
+        `<td><button class="delrow" data-del="${i}">×</button></td>`;
       tb.appendChild(tr); return; }
     ni++;
     const sell=lineSell(l), amt=sell*l.qty; tc+=l.cost*l.qty; ts+=amt;
@@ -1086,16 +1099,15 @@ function render(animate){
     let opts = l.cand.map(c=>`<option value="${c.code}" ${c.code===l.code?'selected':''}>${c.code}｜${esc(c.name)}（${c.s}）</option>`).join('');
     opts = `<option value="">— 新規登録 —</option>`+opts;
     tr.innerHTML=
-      `<td>通常</td>`+
+      kindCell(i,l)+
       `<td class="l"><input class="celled name" data-i="${i}" data-k="name" value="${esc(l.name)}"></td>`+
       `<td><input class="celled qty" data-i="${i}" data-k="qty" value="${l.qty}"></td>`+
       `<td><input class="celled" style="width:42px" data-i="${i}" data-k="unit" value="${esc(l.unit)}"></td>`+
       `<td><input class="celled" style="width:64px" data-i="${i}" data-k="cost" value="${l.cost}"></td>`+
       `<td><input class="celled" style="width:40px" data-i="${i}" data-k="margin" value="${l.margin}"></td>`+
       `<td class="sell" data-sell="${i}">${yen(sell)}</td><td class="sell" data-amt="${i}">${yen(amt)}</td>`+
-      `<td class="l"><input class="celled memo" data-i="${i}" data-k="memo" value="${esc(l.memo||'')}" placeholder="メモ"></td>`+
       `<td class="l">${tag} <button class="mschip" data-mschip="${i}" title="クリックで検索・選択">${l.code?esc(l.code+'｜'+(codeName(l.code)||l.name||'')):'<span class=\'hint\'>コードを選択 ▾</span>'}</button></td>`+
-      `<td><button class="addrow" data-add="${i}" title="この下に明細行を追加">＋</button><button class="addrow addsec" data-addsec="${i}" title="この下に摘要行を追加">摘</button><button class="delrow" data-del="${i}">×</button></td>`;
+      `<td><button class="delrow" data-del="${i}">×</button></td>`;
     if(String(l.unit||'').trim()==='回'){ tr.classList.add('warnrow'); tr.title='単位が「回」の行です（運搬費・経費など要確認）'; }
     if(!foldedRow) tb.appendChild(tr);
   });
@@ -1206,8 +1218,10 @@ $('rows').addEventListener('input',e=>{
 $('rows').addEventListener('change',e=>{
   const el=e.target;
   if(el.classList.contains('matchsel')){ const i=+el.dataset.code; LINES[i].code=el.value; recompute(); }
-  else if(el.classList.contains('celled') && (el.dataset.k==='name'||el.dataset.k==='unit')){ resolveAll(); }
-  else if(el.classList.contains('celled') && el.dataset.k==='memo'){ saveDraft(); }   // メモは社内用（見積書・弥生には出ません）
+  else if(el.classList.contains('celled') && (el.dataset.k==='name'||el.dataset.k==='unit')){
+    const l=LINES[+el.dataset.i];
+    if(l&&l.kind==='item')resolveAll(); else saveDraft();   // 摘要・メモ行は名寄せ不要
+  }
   else if(el.classList.contains('supname')){   // 区切りの会社名を編集→そのまとまりの仕入先名を一括更新
     const key=el.dataset.sup||'', newS=(el.value||'').trim();
     LINES.forEach(l=>{ if(grpKey(l)===key) l.supplier=newS; });
@@ -1223,9 +1237,9 @@ function renderTrash(){
   w.hidden = TRASH.length===0;
   const c=$('trashCnt'); if(c)c.textContent=TRASH.length?TRASH.length+'件':'';
   const tb=$('trashRows'); if(!tb)return;
-  tb.innerHTML=TRASH.map(t=>{ const l=t.l, sec=(l.kind==='sec');
-    const nm=sec?('【摘要】'+(l.name||'')):(l.name||'（品名なし）');
-    return `<tr><td class="l">${esc(nm)}</td><td>${sec?'':l.qty}</td><td>${esc(l.unit||'')}</td><td>${sec?'':Number(l.cost||0).toLocaleString()}</td><td class="l">${esc(l.supplier||'')}</td><td><button type="button" class="ghost sm" data-undel="${t.id}">戻す</button></td></tr>`;
+  tb.innerHTML=TRASH.map(t=>{ const l=t.l, sec=(l.kind==='sec'), nonitem=(l.kind!=='item');
+    const nm=sec?('【摘要】'+(l.name||'')):(l.kind==='memo'?('【メモ】'+(l.name||'')):(l.name||'（品名なし）'));
+    return `<tr><td class="l">${esc(nm)}</td><td>${nonitem?'':l.qty}</td><td>${esc(l.unit||'')}</td><td>${nonitem?'':Number(l.cost||0).toLocaleString()}</td><td class="l">${esc(l.supplier||'')}</td><td><button type="button" class="ghost sm" data-undel="${t.id}">戻す</button></td></tr>`;
   }).join('');
 }
 function trashRestore(id){
@@ -1294,8 +1308,6 @@ $('rows').addEventListener('click',e=>{
     return; }
   const ad=e.target.closest('[data-add]');
   if(ad){ insertAfter(+ad.dataset.add,'item'); return; }
-  const as=e.target.closest('[data-addsec]');
-  if(as){ insertAfter(+as.dataset.addsec,'sec'); return; }
   const del=e.target.closest('[data-del]');
   if(del){ const i=+del.dataset.del; if(LINES[i])trashPush(LINES[i],i);
     LINES.splice(i,1); renderTrash(); render(); return; }
@@ -1311,9 +1323,17 @@ $('addRow2').addEventListener('click',addEmptyRow);
 // 摘要行（種別5）＝見積書にも弥生にも出る文字の行
 function newSecLine(near){ return {kind:'sec',name:'',qty:0,unit:'',cost:0,margin:0,roundUnit:10,roundMode:'round',code:'',cand:[],verdict:'new',
   supplier:(near&&near.supplier)||curSupplier||'',batch:(near?near.batch:null),src:(near&&near.src)||'',memo:''}; }
-function addSecRow(){ LINES.push(newSecLine(LINES[LINES.length-1])); render(); saveDraft();
-  const ins=$('rows').querySelectorAll('tr.sec input.celled'); if(ins.length)ins[ins.length-1].focus(); }
-if($('addSec2'))$('addSec2').addEventListener('click',addSecRow);
+// 区分プルダウン：通常／摘要／メモ の切り替え（打った文字はそのまま残す）
+$('rows').addEventListener('change',e=>{
+  const sel=e.target.closest('.kindsel'); if(!sel)return;
+  const i=+sel.dataset.kind, l=LINES[i]; if(!l)return;
+  const v=sel.value;
+  l.kind = v==='item' ? 'item' : v;
+  if(l.kind==='item'){ if(!l.qty)l.qty=1; if(!l.margin)l.margin=curProfile().defMargin; recalcMatch(l); }
+  else { l.code=''; l.cand=[]; l.verdict='new'; }
+  render(); saveDraft();
+  const inp=$('rows').querySelector('input.celled[data-i="'+i+'"][data-k="name"]'); if(inp)inp.focus();
+});
 // 入力中のキーボードで行を足す：Enter＝明細行／Shift+Enter＝摘要行（どちらもその行の下に入る）
 function newItemLine(near){ const p=curProfile();
   return {kind:'item',name:'',qty:1,unit:'',cost:0,margin:p.defMargin,roundUnit:p.defUnit,roundMode:p.defMode,code:'',cand:[],verdict:'new',
@@ -1982,9 +2002,9 @@ function buildCsv(){
       r[23]=String(l.qty);r[24]=String(sell);r[25]=String(amt);r[27]=String(amt);r[28]=String(camt);r[29]=String(l.cost);r[31]='2';r[32]='2';
       // メモは社内用なので弥生には出さない（見積書にも出ません）
       push(r);
-    } else {
+    } else if(l.kind==='sec'){
       const r=base(); r[14]='5'; r[17]=l.name; zeros(r); push(r);   // 摘要・注記行＝種別5
-    }
+    }   // メモ行は社内用なので出力しない（行番号は詰まる）
   });
   if(multiSupCsv && !first){ const s=base(); s[14]='5'; s[17]=''; zeros(s); push(s); }   // 最後の会社のあとも空行
   // フッタ（値がある項目だけ）：件名20／納入場所22／支払条件23／有効期限24
@@ -2081,9 +2101,12 @@ $('dlCsv').addEventListener('click',async()=>{ if(!LINES.length){toast('明細�
   toast(window.Encoding?'エクスポートしました（Shift-JIS）':'エクスポートしました（UTF-8）'); });
 
 // 全画面ローディング（他操作をブロック）。多重呼び出しに備えてカウント式
-let _loadN=0;
-function showLoading(msg){ const o=$('loadingOverlay'); if(!o)return; _loadN++; const m=$('loadingMsg'); if(m)m.textContent=msg||'読み込み中…'; o.hidden=false; }
-function hideLoading(){ const o=$('loadingOverlay'); if(!o)return; _loadN=Math.max(0,_loadN-1); if(_loadN<=0){ _loadN=0; o.hidden=true; } }
+let _loadN=0,_loadT=null;
+// すぐ終わる処理で画面を覆わないよう、0.3秒かかったときだけ出す（押したボタンが無視されるのを防ぐ）
+function showLoading(msg){ const o=$('loadingOverlay'); if(!o)return; _loadN++; const m=$('loadingMsg'); if(m)m.textContent=msg||'読み込み中…';
+  if(o.hidden && !_loadT) _loadT=setTimeout(()=>{ _loadT=null; if(_loadN>0)o.hidden=false; },300); }
+function hideLoading(){ const o=$('loadingOverlay'); if(!o)return; _loadN=Math.max(0,_loadN-1);
+  if(_loadN<=0){ _loadN=0; if(_loadT){clearTimeout(_loadT);_loadT=null;} o.hidden=true; } }
 let tt; function toast(m,busy){const t=$('toast');t.innerHTML=(busy?'<span class="spin"></span>':'')+esc(m);t.classList.add('show');clearTimeout(tt);if(!busy)tt=setTimeout(()=>t.classList.remove('show'),1800);}
 function toastDone(m){clearTimeout(tt);const t=$('toast');t.innerHTML=esc(m);t.classList.add('show');tt=setTimeout(()=>t.classList.remove('show'),1800);}
 
