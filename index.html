@@ -86,8 +86,18 @@
   .itemtable tr.memorow td:first-child{background:#fffdf0}
   .itemtable tr.dupwarn td:first-child{background:#fff3f3}
   .itemtable tr.warnrow td:first-child{background:#fff8e6}
-  .mschip{border:1px solid var(--line);background:var(--bg);color:var(--fg);padding:4px 10px;border-radius:7px;cursor:pointer;font-size:.82rem;max-width:120px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;text-align:left;vertical-align:middle}
-  .itemtable input.name{min-width:380px}
+  .mschip{border:1px solid var(--line);background:var(--bg);color:var(--fg);padding:4px 10px;border-radius:7px;cursor:pointer;font-size:.82rem;max-width:calc(100% - 58px);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;text-align:left;vertical-align:middle}
+  .itemtable{table-layout:fixed}
+  .itemtable th{position:relative}
+  .itemtable th .colgrip{position:absolute;top:0;right:-4px;width:9px;height:100%;cursor:col-resize;z-index:3}
+  .itemtable th .colgrip::after{content:'';position:absolute;left:4px;top:18%;height:64%;width:1px;background:var(--line)}
+  .itemtable th:hover .colgrip::after{background:var(--accent)}
+  .itemtable td,.itemtable th{overflow:hidden}
+  .itemtable td.l,.itemtable th.l{text-overflow:ellipsis}
+  .itemtable input.celled{min-width:0;max-width:100%}
+  .itemtable input.name{width:100%;min-width:0}
+  .itemtable td.l{white-space:nowrap}
+  body.colresizing{cursor:col-resize;user-select:none}
   .itemtable td.kindtd{white-space:nowrap;padding-left:4px;padding-right:4px}
   .itemtable select.kindsel{font-size:.78rem;padding:2px 2px;border:1px solid var(--line);border-radius:6px;background:var(--bg,#fff);color:var(--fg)}
   tr.dupwarn td{background:#fff3f3}
@@ -95,7 +105,17 @@
   tr.memorow td{background:#fffdf0}
   tr.memorow select.kindsel{border-color:#d9c46a}
   tr.memorow input.celled{color:#8a6d1a}
-  .itemtable input.name{min-width:380px}
+  .itemtable{table-layout:fixed}
+  .itemtable th{position:relative}
+  .itemtable th .colgrip{position:absolute;top:0;right:-4px;width:9px;height:100%;cursor:col-resize;z-index:3}
+  .itemtable th .colgrip::after{content:'';position:absolute;left:4px;top:18%;height:64%;width:1px;background:var(--line)}
+  .itemtable th:hover .colgrip::after{background:var(--accent)}
+  .itemtable td,.itemtable th{overflow:hidden}
+  .itemtable td.l,.itemtable th.l{text-overflow:ellipsis}
+  .itemtable input.celled{min-width:0;max-width:100%}
+  .itemtable input.name{width:100%;min-width:0}
+  .itemtable td.l{white-space:nowrap}
+  body.colresizing{cursor:col-resize;user-select:none}
   .mschip:hover{border-color:var(--accent);color:var(--accent)}
   #msInlineBox{position:fixed;z-index:9998;background:var(--surface);border:1px solid var(--line);border-radius:10px;box-shadow:0 12px 30px rgba(0,0,0,.26);display:none;overflow:hidden}
   #msInlineQ{width:100%;border:0;border-bottom:1px solid var(--line);padding:9px 11px;font-size:.86rem;outline:none;background:var(--surface);color:var(--fg);box-sizing:border-box}
@@ -432,7 +452,7 @@
     <div class="row" style="margin-bottom:8px">
       <button type="button" class="ghost sm" id="addFromMasterBtn">＋ 商品マスタから追加</button>
       <button type="button" class="ghost sm" id="addRow2">＋ 空の明細行</button>
-      <span class="hint">左の <b>＋</b> でその下に行を追加（入力中は <b>Enter</b> でも追加）／区分で 通常・摘要・メモ を切り替え</span>
+      <span class="hint">左の <b>＋</b> でその下に行を追加（入力中は <b>Enter</b> でも追加）／区分で 通常・摘要・メモ を切り替え／見出しの境目をドラッグで列幅変更 <a href="#" id="colwReset" style="color:var(--accent)">元に戻す</a></span>
       <span class="hint" id="masterLoadStat"></span>
     </div>
     <div id="msPanel" hidden style="border:1px solid var(--line);border-radius:10px;padding:10px;margin-bottom:10px;background:#fff">
@@ -445,6 +465,7 @@
     </div>
     <div class="tablewrap">
       <table class="itemtable">
+        <colgroup id="itemCols"></colgroup>
         <thead><tr>
           <th class="l">区分</th><th class="l">品名／規格</th><th>数量</th><th>単位</th>
           <th>原単価</th><th>ﾏｰｼﾞﾝ%</th><th class="sell">売単価</th><th class="sell">売金額</th>
@@ -1081,6 +1102,32 @@ function reorderSuppliers(fromKey,toKey){
   LINES=out;
 }
 
+// ===== 列幅（ヘッダの境目をドラッグして変更・この端末に保存） =====
+const COLW_DEF=[92,300,64,56,82,60,76,86,200,46];
+let COLW=COLW_DEF.slice();
+try{ const v=JSON.parse(localStorage.getItem('mitsumori_colw')||'null');
+  if(Array.isArray(v)&&v.length===COLW_DEF.length)COLW=v.map((x,i)=>Math.max(40,+x||COLW_DEF[i])); }catch(_){}
+function applyColW(){ const cg=$('itemCols'); if(!cg)return;
+  cg.innerHTML=COLW.map(w=>`<col style="width:${w}px">`).join(''); }
+function saveColW(){ try{ localStorage.setItem('mitsumori_colw',JSON.stringify(COLW)); }catch(_){} }
+function resetColW(){ COLW=COLW_DEF.slice(); applyColW(); saveColW(); toast('列幅を元に戻しました'); }
+function bindColGrips(){
+  const ths=document.querySelectorAll('.itemtable thead th'); if(!ths.length)return;
+  ths.forEach((th,i)=>{ if(i>=COLW.length-0)return;
+    if(th.querySelector('.colgrip'))return;
+    const g=document.createElement('span'); g.className='colgrip'; g.title='ドラッグで列幅を変える（ダブルクリックで元に戻す）';
+    g.addEventListener('dblclick',()=>{ COLW[i]=COLW_DEF[i]; applyColW(); saveColW(); });
+    g.addEventListener('pointerdown',ev=>{
+      ev.preventDefault(); ev.stopPropagation();
+      const x0=ev.clientX, w0=COLW[i]; g.setPointerCapture(ev.pointerId);
+      document.body.classList.add('colresizing');
+      const mv=e2=>{ COLW[i]=Math.max(40,Math.round(w0+(e2.clientX-x0))); applyColW(); };
+      const up=()=>{ document.body.classList.remove('colresizing');
+        g.removeEventListener('pointermove',mv); g.removeEventListener('pointerup',up); saveColW(); };
+      g.addEventListener('pointermove',mv); g.addEventListener('pointerup',up);
+    });
+    th.appendChild(g); });
+}
 // 行の左端：＋（下に空行を足す）と 区分のプルダウン（通常／摘要／メモ）
 function kindCell(i,l){
   const k=l.kind==='sec'?'sec':(l.kind==='memo'?'memo':'item');
@@ -2691,6 +2738,8 @@ syncTantoFromProfile();       // この端末の担当者に合わせて担当�
 HKEYS.forEach(k=>{ const e=$(k); if(e){ e.addEventListener('input',()=>{saveDraft();markRequired();}); e.addEventListener('change',markRequired); } });
 markRequired();
 loadDrafts(); bindDrafts(); renderDraftList(); setToday(); peekQuoteNo(); initLearnSwitch(); bindLabelsUI();
+applyColW(); bindColGrips();
+if($('colwReset'))$('colwReset').addEventListener('click',e=>{ e.preventDefault(); resetColW(); });
 LINES=[]; render();   // 起動時は空。続き一覧から選ぶかPDFを読み込む
 showStep(1);
 showLoading('読み込み中…');   // 起動時のマスタ取得が終わるまで操作をブロック
