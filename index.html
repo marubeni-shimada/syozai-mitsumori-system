@@ -328,7 +328,7 @@
       <span class="filebtn"><button type="button">マスタ取り込み（スプレッドシートへ登録）</button><input type="file" id="masterIn" accept=".xlsx,.xls,.txt,.csv"></span>
       <span class="hint" id="masterStat">内蔵マスタ使用中（グレーチング705件）</span>
     </div>
-    <p class="hint">弥生でエクスポートした商品台帳CSV（A列コード・B列商品名・E列単位）をアップロードすると、スプレッドシートの「商品台帳」シートに登録します。登録後は全件で名寄せします。</p>
+    <p class="hint">弥生でエクスポートした商品台帳（<b>Excel/CSV</b>）をアップロードすると（見出しから「コード・名称・単位」の列を自動で判別します）、スプレッドシートの「商品台帳」シートに登録します。登録後は全件で名寄せします。</p>
   </div>
 
   <!-- 得意先台帳マスタ登録（管理者のみ） -->
@@ -2264,8 +2264,8 @@ $('masterIn').addEventListener('change',async e=>{
   const file=e.target.files[0]; if(!file)return;
   if(!GAS_URL){ toast('GAS_URLが未設定です'); e.target.value=''; return; }
   toast('マスタ解析中…');
-  const rows=(await fileToRows(file)).map(r=>[(r[0]||'').trim(),(r[1]||'').trim(),(r[4]||'').trim()]).filter(r=>r[0]&&r[1]);
-  if(!rows.length){ toastDone('台帳データを読めませんでした'); e.target.value=''; return; }
+  const rows=parseMasterRows(await fileToRows(file));
+  if(!rows.length){ toastDone('台帳データを読めませんでした（コード・名称の列が見つかりません）'); e.target.value=''; return; }
   toast(`${rows.length}件をスプレッドシートへ登録中…`,true);
   try{
     const res=await fetch(GAS_URL,{method:'POST',headers:{'Content-Type':'text/plain;charset=utf-8'},body:JSON.stringify({action:'setMaster',rows})});
@@ -2281,6 +2281,19 @@ $('masterIn').addEventListener('change',async e=>{
 
 // ファイル→行配列（.xlsx/.xls は表計算として、.csv/.txt はテキストとして解析）
 function pickCol(header,names){ for(let i=0;i<header.length;i++){ const h=(header[i]||'').replace(/\s/g,''); if(names.some(n=>h.indexOf(n)>=0))return i; } return -1; }
+// 商品台帳：見出し行を探して「コード・名称・単位」の列を自動判別（前置きの行や列のずれに対応）
+function parseMasterRows(all){
+  all=(all||[]).filter(r=>r&&r.some(c=>String(c||'').trim()));
+  if(!all.length)return [];
+  const hi=all.findIndex(r=>r.some(c=>/^\s*コード\s*$|商品コード/.test(String(c||'')))&&r.some(c=>/名称|商品名|品名/.test(String(c||''))));
+  let cC,cN,cU,start;
+  if(hi>=0){ const H=all[hi];
+    cC=pickCol(H,['商品コード','コード']); cN=pickCol(H,['名称','商品名','品名']); cU=pickCol(H,['単位']); start=hi+1;
+  }else{ cC=0; cN=1; cU=4; start=0; }                    // 見出しが無ければ従来どおりA/B/E列
+  const g=(r,i)=>i>=0&&i<r.length?String(r[i]==null?'':r[i]).trim():'';
+  return all.slice(start).map(r=>[g(r,cC),g(r,cN),g(r,cU)])
+    .filter(r=>r[0]&&r[1]&&!/^コード$/.test(r[0]));
+}
 async function fileToRows(file){
   const buf=await file.arrayBuffer();
   if(/\.xlsx?$/i.test(file.name) && window.XLSX){
