@@ -1515,6 +1515,10 @@ function tkNorm(s){ s=(s||'').normalize('NFKC');
   ['株式会社','有限会社','合同会社','合資会社','(株)','(有)','（株）','（有）','(資)','(名)'].forEach(w=>{ s=s.split(w).join(''); });
   return s.replace(/[\s　・,.，．\-ｰ()（）]/g,'').toLowerCase(); }
 function tkScore(qn,code,nn,kn){ let sc;
+  const cd=String(code||'').toLowerCase();
+  if(cd&&cd===qn) return 1300;                   // コードがそのまま一致
+  if(cd&&qn&&cd.indexOf(qn)===0) return 900;     // コードの先頭一致（1777 を「17」で）
+  if(cd&&qn.length>=2&&cd.indexOf(qn)>=0) return 700;
   if(nn===qn||kn===qn) sc=1000;
   else if(nn.startsWith(qn)||qn.startsWith(nn)) sc=600;
   else if(nn.indexOf(qn)>=0) sc=400;
@@ -1590,6 +1594,7 @@ if($('hTokuiName')){ $('hTokuiName').addEventListener('change',fillFromName); }
 // 得意先の欄をクリックしたら一覧を出す（欄の値はそのまま残す）
 ['hTokui','hTokuiName'].forEach(id=>{ const e=$(id); if(!e)return;
   e.addEventListener('focus',()=>renderTokuiBox($('tokuiQuery'),$('tokuiResults'),true));   // 欄クリックは全件
+  e.addEventListener('input',()=>renderTokuiBox(e,$('tokuiResults')));                      // 打った文字で絞り込み
   e.addEventListener('blur',()=>setTimeout(()=>{
     const a=document.activeElement, keep=['tokuiQuery','hTokui','hTokuiName'];
     if($('tokuiResults').contains(a))return;
