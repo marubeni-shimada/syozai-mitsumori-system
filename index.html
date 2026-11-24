@@ -68,6 +68,7 @@
   .hgroup{border:1px solid var(--line);border-radius:10px;padding:10px 12px 12px;margin-bottom:10px;background:var(--surface)}
   .hgtitle{font-size:.78rem;font-weight:700;color:var(--accent);margin:0 0 8px;letter-spacing:.04em}
   .hgroup .row{align-items:flex-start}
+  input.locked{pointer-events:none;user-select:none;caret-color:transparent;color:var(--muted);background:var(--chip,#eef2ff) !important;border-style:solid !important}
   .hgroup .f.grow{flex:1 1 220px;min-width:200px}
   .hgroup .f.grow input{width:100%}
   .hgroup .f.grow2{flex:2 1 320px;min-width:260px}
@@ -339,8 +340,8 @@
     <div class="hgroup">
       <div class="hgtitle">この見積</div>
       <div class="row">
-        <div class="f"><label>見積番号 <span class="autobadge">自動</span></label><input class="s auto" id="hNo" value="" placeholder="エクスポート時に自動" readonly><span class="hint" id="hNoPeek" style="margin-top:4px"></span></div>
-        <div class="f"><label>見積日 <span class="autobadge">自動</span></label><input class="s auto" id="hDate" value="" readonly title="作成日（今日）が自動で入ります"></div>
+        <div class="f"><label>見積番号 <span class="autobadge">自動</span></label><input class="s auto locked" id="hNo" value="" placeholder="エクスポート時に自動" readonly tabindex="-1"><span class="hint" id="hNoPeek" style="margin-top:4px"></span></div>
+        <div class="f"><label>見積日 <span class="autobadge">自動</span></label><input class="s auto locked" id="hDate" value="" readonly tabindex="-1" title="作成日（今日）が自動で入ります"></div>
         <div class="f"><label>担当者</label><select id="hTanto" style="min-width:150px"></select></div>
         <div class="f grow"><label>仕入先名（明細の見出し） <span class="autobadge">自動</span></label><input class="m auto" id="hSupplier" value="" placeholder="PDFから自動"></div>
       </div>
