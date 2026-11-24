@@ -65,6 +65,8 @@
   @keyframes pop{from{transform:scale(.6);opacity:0}to{transform:scale(1);opacity:1}}
 
   .tablewrap{overflow-x:auto;border:1px solid var(--line);border-radius:10px}
+  .reqbadge{display:inline-block;background:#fdecc8;color:#8a6212;border-radius:4px;font-size:.66rem;font-weight:700;padding:1px 5px;margin-left:4px;vertical-align:middle}
+  .needfill{background:#fffaf0 !important;border-color:#e0b640 !important;box-shadow:0 0 0 2px rgba(224,182,64,.22)}
   .itemtable td:last-child,.itemtable th:last-child{position:sticky;right:0;background:var(--surface);z-index:2;box-shadow:-6px 0 6px -5px rgba(0,0,0,.18)}
   .mschip{border:1px solid var(--line);background:var(--bg);color:var(--fg);padding:4px 10px;border-radius:7px;cursor:pointer;font-size:.82rem;max-width:120px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;text-align:left;vertical-align:middle}
   .itemtable input.name{min-width:150px}
@@ -329,8 +331,8 @@
     <div class="row">
       <div class="f"><label>見積番号（自動採番）</label><input class="s" id="hNo" value="" placeholder="エクスポート時に自動" readonly><span class="hint" id="hNoPeek" style="margin-top:4px"></span></div>
       <div class="f"><label>見積日（自動・今日）</label><input class="s" id="hDate" value="" readonly title="作成日（今日）が自動で入ります"></div>
-      <div class="f"><label>得意先コード（検索プルダウン）</label><input class="s" id="hTokui" value="" list="tokuiCodeList" autocomplete="off"><datalist id="tokuiCodeList"></datalist></div>
-      <div class="f"><label>得意先名（検索プルダウン）</label><input class="m" id="hTokuiName" value="" list="tokuiNameList" autocomplete="off"><datalist id="tokuiNameList"></datalist></div>
+      <div class="f"><label>得意先コード <span class="reqbadge">必須</span></label><select class="s req" id="hTokui" style="min-width:150px"></select></div>
+      <div class="f"><label>得意先名 <span class="reqbadge">必須</span></label><select class="m req" id="hTokuiName" style="min-width:230px"></select></div>
       <div class="f"><label>担当者コード</label><select id="hTanto" style="min-width:150px"></select></div>
     </div>
     <div class="row" style="margin-top:10px">
@@ -339,7 +341,7 @@
       <div class="f"><label>仕入先名（見出し）</label><input class="m" id="hSupplier" value="" placeholder="PDFから自動"></div>
     </div>
     <div class="row" style="margin-top:10px">
-      <div class="f"><label>件名</label><input class="m" id="hKenmei" value=""></div>
+      <div class="f"><label>件名 <span class="reqbadge">必須</span></label><input class="m req" id="hKenmei" value=""></div>
       <div class="f"><label>納入場所</label><input class="m" id="hNohin" value=""></div>
       <div class="f"><label>支払条件</label><input class="s" id="hShiharai" value=""></div>
       <div class="f"><label>有効期限/納期</label><input class="s" id="hYuko" value=""></div>
@@ -1174,7 +1176,9 @@ function openDraft(id){
   const d=DRAFTS.find(x=>x.id===id); if(!d)return;
   curDraftId=d.id; curDraftName=d.name; curSupplier=d.supplier||''; LINES=d.lines;
   LINES.forEach(l=>{ const b=parseInt(l.batch,10); if(b>BATCH_SEQ)BATCH_SEQ=b; });   // 続きを読み込んだ後に追加しても番号が衝突しないように
-  HKEYS.forEach(k=>{ if($(k)&&d.header&&d.header[k]!=null)$(k).value=d.header[k]; });
+  HKEYS.forEach(k=>{ if($(k)&&d.header&&d.header[k]!=null){ const e=$(k); e.value=d.header[k];
+    if(e.tagName==='SELECT'&&e.value!==d.header[k]&&d.header[k]){ e.insertAdjacentHTML('afterbegin',`<option value="${esc(d.header[k])}">${esc(d.header[k])}</option>`); e.value=d.header[k]; } } });
+  markRequired();
   setToday();   // 見積日は保存値ではなく常に今日
   if(typeof trashClear==='function')trashClear();   // 別の見積に切り替えたら戻せる行は持ち越さない
   render(); showStep(2); toast(`「${d.name}」を再開`);
@@ -1509,6 +1513,11 @@ function renderTokuiBox(qEl,boxEl){
     ? list.map(t=>`<div class="msrow" data-tc="${esc(t.code)}" style="padding:6px 8px;border-bottom:1px solid var(--line);cursor:pointer;display:flex;gap:8px;align-items:center"><span class="mono" style="color:var(--accent);min-width:46px;font-weight:700">${esc(t.code)}</span><span style="flex:1">${esc(t.name)}</span><span class="hint" style="white-space:nowrap">${esc(t.tanto||'')}</span></div>`).join('')
     : '<p class="hint" style="padding:6px 8px;margin:0">該当なし</p>';
 }
+// 入っているべき項目（得意先コード・得意先名・件名）を、空のあいだだけ黄色で強調
+function markRequired(){
+  ['hTokui','hTokuiName','hKenmei'].forEach(id=>{ const e=$(id); if(!e)return;
+    e.classList.toggle('needfill', !String(e.value||'').trim()); });
+}
 function updateTokuiTag(){ const c=($('hTokui')?$('hTokui').value:''), n=($('hTokuiName')?$('hTokuiName').value:'');
   const el=$('curTokuiTag'); if(el) el.textContent = c?`選択中：${c}｜${n}`:''; }
 function pickTokui(code){
@@ -1520,15 +1529,30 @@ function pickTokui(code){
   toast(`${t.code}｜${t.name} を設定しました`);
 }
 function bindTokuiSearch(qid,bid){ const qEl=$(qid), bEl=$(bid); if(!qEl||!bEl)return;
-  qEl.addEventListener('input',()=>renderTokuiBox(qEl,bEl));
+  qEl.addEventListener('input',()=>{ renderTokuiBox(qEl,bEl); populateTokuiLists(qEl.value); });
   bEl.addEventListener('click',e=>{ const r=e.target.closest('[data-tc]'); if(r){ pickTokui(r.dataset.tc); qEl.value=''; bEl.style.display='none'; } }); }
 bindTokuiSearch('tokuiQuery','tokuiResults');    // ②ヘッダ側（得意先 名寄せ）
 
 // 得意先コード/名を「検索できるプルダウン（datalist）」化＋双方向オートフィル
-function populateTokuiLists(){
-  const cl=$('tokuiCodeList'), nl=$('tokuiNameList'); if(!cl||!nl||!ALLTOKUI.length)return;
-  cl.innerHTML=ALLTOKUI.map(t=>`<option value="${esc(t.code)}">${esc(t.name)}</option>`).join('');
-  nl.innerHTML=ALLTOKUI.map(t=>`<option value="${esc(t.name)}">${esc(t.code)}</option>`).join('');
+function tokuiFill(sel,kind,cur,hits){
+  const mk=t=> kind==='code' ? `<option value="${esc(t.code)}">${esc(t.code)}｜${esc(t.name)}</option>`
+                             : `<option value="${esc(t.name)}">${esc(t.name)}（${esc(t.code)}）</option>`;
+  let h=`<option value="">（未選択）</option>`;
+  if(hits&&hits.length) h+=`<optgroup label="打った文字に近いもの">`+hits.map(mk).join('')+`</optgroup>`;
+  h+=`<optgroup label="全件（${ALLTOKUI.length}件）">`+ALLTOKUI.map(mk).join('')+`</optgroup>`;
+  sel.innerHTML=h;
+  if(cur){ sel.value=cur;
+    if(sel.value!==cur){   // 台帳に無い値（古い続きなど）は消さずに残す
+      sel.insertAdjacentHTML('afterbegin',`<option value="${esc(cur)}">${esc(cur)}</option>`); sel.value=cur; } }
+}
+// 文字を入れても一覧は常に全件。合うものを「検索の候補」として上に出すだけ
+function populateTokuiLists(q){
+  const cs=$('hTokui'), ns=$('hTokuiName'); if(!cs||!ns)return;
+  if(q==null){ const qe=$('tokuiQuery'); q=qe?qe.value:''; }
+  const hits=(q||'').trim()?searchTokui(q,50):[];
+  tokuiFill(cs,'code',cs.value,hits);
+  tokuiFill(ns,'name',ns.value,hits);
+  markRequired();
 }
 function fillFromCode(){ const c=($('hTokui').value||'').trim(); const t=ALLTOKUI.find(x=>x.code===c); if(!t)return;
   $('hTokuiName').value=t.name; if($('hTel'))$('hTel').value=t.tel||''; if($('hFax'))$('hFax').value=t.fax||'';
@@ -2586,7 +2610,8 @@ bindIdBar();
 fillTantoSelect();            // 担当者コードのプルダウン
 syncTantoFromProfile();       // この端末の担当者に合わせて担当者コードを初期反映
 // 作業中データ（続きから）
-HKEYS.forEach(k=>{ const e=$(k); if(e)e.addEventListener('input',saveDraft); });
+HKEYS.forEach(k=>{ const e=$(k); if(e){ e.addEventListener('input',()=>{saveDraft();markRequired();}); e.addEventListener('change',markRequired); } });
+markRequired();
 loadDrafts(); bindDrafts(); renderDraftList(); setToday(); peekQuoteNo(); initLearnSwitch(); bindLabelsUI();
 LINES=[]; render();   // 起動時は空。続き一覧から選ぶかPDFを読み込む
 showStep(1);
