@@ -71,6 +71,15 @@
   #msInlineQ{width:100%;border:0;border-bottom:1px solid var(--line);padding:9px 11px;font-size:.86rem;outline:none;background:var(--surface);color:var(--fg);box-sizing:border-box}
   #msInlineList{max-height:240px;overflow:auto}
   .msi-row{padding:7px 10px;border-bottom:1px solid var(--line);cursor:pointer;font-size:.82rem;white-space:nowrap}
+  .supchip{display:flex;align-items:center;gap:9px;background:var(--surface);border:2px solid var(--line);
+    border-radius:11px;padding:7px 10px;cursor:pointer;min-width:195px;max-width:290px}
+  .supchip:hover{border-color:var(--accent)}
+  .supchip .gr{color:var(--muted);font-size:14px;letter-spacing:-2px;cursor:grab;flex:none}
+  .supchip .nm{font-weight:700;font-size:.82rem;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .supchip .sub{color:var(--muted);font-size:.72rem;white-space:nowrap}
+  .supchip .x{margin-left:auto;border:none;background:none;color:var(--muted);cursor:pointer;font-size:15px;padding:0 2px;line-height:1;flex:none}
+  .supchip .x:hover{color:var(--new,#c0352f)}
+  .msi-head{position:sticky;top:0;padding:4px 10px;background:var(--accent-soft);color:var(--accent);font-size:.74rem;font-weight:700;border-bottom:1px solid var(--line)}
   .msi-row:hover{background:var(--accent-soft)}
   table{width:100%;border-collapse:collapse;font-size:.83rem;min-width:860px;font-variant-numeric:tabular-nums}
   th,td{padding:7px 9px;border-bottom:1px solid var(--line);text-align:right;white-space:nowrap;vertical-align:top}
@@ -364,7 +373,21 @@
 
   <!-- ③ 明細＋名寄せ -->
   <div class="card">
-    <h2>③ 明細・名寄せ（売単価＝原単価×マージン / 商品コードは候補から確認）</h2>
+    <h2 style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
+      <span>③ 明細・名寄せ（売単価＝原単価×マージン / 商品コードは候補から確認）</span>
+      <button type="button" id="btnPreview" style="margin-left:auto;background:var(--accent);color:#fff;border:none;border-radius:9px;padding:7px 16px;font-size:.86rem;font-weight:700;cursor:pointer;white-space:nowrap">見積書を見る</button>
+    </h2>
+    <!-- 仕入先バー（複数仕入先のときだけ表示） -->
+    <div id="supBarWrap" hidden style="margin:0 0 10px">
+      <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:7px">
+        <b style="font-size:.86rem">仕入先</b><span class="hint" id="supBarHint" style="margin:0"></span>
+        <span style="margin-left:auto;display:flex;gap:6px">
+          <button type="button" class="ghost sm" id="supFoldAll">全部畳む</button>
+          <button type="button" class="ghost sm" id="supOpenAll">全部開く</button>
+        </span>
+      </div>
+      <div id="supBar" style="display:flex;gap:9px;flex-wrap:wrap"></div>
+    </div>
     <div class="row" style="margin-bottom:8px">
       <button type="button" class="ghost sm" id="addFromMasterBtn">＋ 商品マスタから追加</button>
       <button type="button" class="ghost sm" id="addRow2">＋ 空の明細行</button>
@@ -387,6 +410,9 @@
         </tr></thead>
         <tbody id="rows"></tbody>
       </table>
+    </div>
+    <div id="supDrop" style="margin-top:10px;border:2px dashed var(--line);border-radius:12px;padding:14px;text-align:center;color:var(--muted);font-size:.85rem;cursor:pointer">
+      ＋ ここにPDFをドラッグすると仕入先を追加できます<span class="hint" style="margin:0">（クリックでファイル選択）</span>
     </div>
     <p class="hint"><span class="tag learned">学習済</span> 前回の確定を適用　<span class="tag ok">一致</span> 自動採用　<span class="tag chk">要確認</span> 僅差・弱い一致　<span class="tag new">新規</span> 台帳に無し</p>
     <div id="trashWrap" hidden style="margin-top:12px;border:1px dashed var(--line);border-radius:10px;padding:10px 12px;background:var(--bg)">
@@ -837,19 +863,180 @@ const lineSell=l=>roundSell(l.cost,l.margin,l.roundUnit,l.roundMode);
 function recalcMatch(l){ if(l.kind!=='item'){return;} const r=matchTop(l.name,l.unit); l.cand=r.cand; l.verdict=r.verdict;
   l.code = r.verdict==='new' ? '' : (r.cand[0]?r.cand[0].code:''); }
 
+// ===== 見積書プレビュー（原本書式・別ウィンドウで開く／印刷可） =====
+const PV_ROWS=22;
+function openPreview(){
+  if(!LINES.some(l=>l.kind==='item')){ toast('明細がありません'); return; }
+  const g=id=>{ const e=$(id); return e?(e.value||'').trim():''; };
+  const n2=n=>Math.round(n).toLocaleString();
+  const H={ no:g('hNo')||'（未採番）', date:g('hDate')||'', cust:g('hTokuiName')||'', custCode:g('hTokui')||'',
+    custTel:g('hTel'), custFax:g('hFax'), kenmei:g('hKenmei'), nohin:g('hNohin'), yuko:g('hYuko'),
+    tanto:(getMyName()||curProfile().name||'') };
+  // 自社情報（管理ページで変更できます）
+  const CO=getSelfInfo();
+  const rows=[]; let grand=0, costAll=0; let cur=null;
+  LINES.forEach(l=>{
+    if(l.kind!=='item')return;
+    const sup=l.supplier||'';
+    if(sup!==cur){ cur=sup; rows.push({t:'sup',sup}); }
+    const s=lineSell(l), amt=s*l.qty; grand+=amt; costAll+=l.cost*l.qty;
+    rows.push({t:'it',cd:l.code||'',nm:l.name||'',u:l.unit||'',q:l.qty,s,amt,c:l.cost,bk:l.memo||''});
+  });
+  const esc2=s=>String(s==null?'':s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+  const head=(pg)=>`<div class="ttl">御見積書</div><div class="head"><div class="hl">
+      <div class="cust">${esc2(H.cust)}</div><div class="sama">様</div>
+      <div class="tkcode">${H.custCode?'('+esc2(H.custCode)+')':''}</div>
+      <div class="tktel">${H.custTel?'TEL '+esc2(H.custTel):''}${H.custFax?'　　FAX '+esc2(H.custFax):''}</div>
+      <div class="lead2">下記の通り御見積申し上げます。</div>
+      <div class="kv">件名：${esc2(H.kenmei)}</div>
+      <div class="uline">納入場所：${esc2(H.nohin)}</div>
+      <div class="uline">有効期限：${esc2(H.yuko)}</div>
+      <div class="gsum">御見積金額（税抜）¥${n2(grand)}-</div></div>
+    <div class="hr"><div class="pageno"><span class="lb">PAGE</span><span>${pg}</span></div>
+      <div class="pageno"><span class="lb">No.</span><span>${esc2(H.no)}</span></div>
+      <div class="hrrow d" style="margin-top:10px">見積日　${esc2(H.date)}</div>
+      <div class="co">${esc2(CO.co)}</div>
+      <div class="hrrow">${esc2(CO.zip)}　　${esc2(CO.addr)}</div>
+      <div class="hrrow d">TEL ${esc2(CO.tel)}　　　　FAX ${esc2(CO.fax)}</div>
+      <div class="hrrow">担当者：${esc2(H.tanto)}${CO.tantoTel?'　'+esc2(CO.tantoTel):''}</div>
+      <div class="stampbox"><div></div><div></div><div></div></div></div></div>`;
+  const tOpen=`<table class="it"><colgroup><col style="width:auto"><col style="width:42px"><col style="width:70px"><col style="width:86px"><col style="width:104px"><col class="io" style="width:76px"><col class="io" style="width:84px"><col style="width:118px"></colgroup>
+    <thead><tr><th>商品名</th><th style="letter-spacing:0">単位</th><th>数量</th><th>単価</th><th>金額</th><th class="io" style="letter-spacing:0">原単価</th><th class="io" style="letter-spacing:0">粗利</th><th>備考</th></tr></thead><tbody>`;
+  const pad=`<tr class="pad"><td class="nm"></td><td></td><td></td><td></td><td></td><td class="io"></td><td class="io"></td><td></td></tr>`;
+  function build(inner){
+    const vis=rows.filter(r=>inner||r.t!=='sup');
+    const pages=[]; let cur2=[];
+    vis.forEach(r=>{ cur2.push(r); if(cur2.length>=PV_ROWS){pages.push(cur2);cur2=[];} });
+    if(cur2.length||!pages.length)pages.push(cur2);
+    let run=0,out='';
+    pages.forEach((pg,pi)=>{
+      out+=`<div class="sheet">`+head(pi+1)+tOpen;
+      if(pi>0) out+=`<tr><td class="nm"></td><td></td><td></td><td></td><td class="n">${n2(run)}</td><td class="n io"></td><td class="n io"></td><td class="bk">前ページより</td></tr>`;
+      pg.forEach(r=>{ if(r.t==='sup'){ out+=`<tr class="supsec"><td colspan="8">▼ ${esc2(r.sup||'（会社名なし）')}（社内用の区切り・印刷されません）</td></tr>`; }
+        else { run+=r.amt; out+=`<tr><td class="nm"><span class="cd">${esc2(r.cd)}</span>${esc2(r.nm)}</td><td class="u">${esc2(r.u)}</td><td class="n">${n2(r.q)}</td><td class="n">${n2(r.s)}</td><td class="n">${n2(r.amt)}</td><td class="n io">${n2(r.c)}</td><td class="n io">${n2(r.amt-r.c*r.q)}</td><td class="bk">${esc2(r.bk)}</td></tr>`; } });
+      const used=pg.length+(pi>0?1:0);
+      for(let i=used;i<PV_ROWS+1;i++)out+=pad;
+      out+=`<tr class="sum"><td class="nm"></td><td></td><td></td><td class="lb">合計</td><td class="n">${n2(run)}</td><td class="io"></td><td class="io"></td><td></td></tr></tbody></table></div>`;
+    });
+    return out;
+  }
+  const css=`:root{--accent:#2d6cdf;--accent-soft:#eaf1ff;--line:#e2e7ef;--muted:#6b7483}
+  *{box-sizing:border-box} body{margin:0;background:#eef1f5;color:#1a1f29;padding:14px 14px 50px;font:15px/1.6 -apple-system,"Hiragino Kaku Gothic ProN","Noto Sans JP",sans-serif}
+  .ctl{max-width:1000px;margin:0 auto 14px;display:flex;gap:8px;align-items:center;flex-wrap:wrap;background:#fff;border:1px solid var(--line);border-radius:12px;padding:10px 12px}
+  .seg{display:flex;border:1px solid var(--line);border-radius:999px;overflow:hidden}
+  .seg button{border:none;background:#fff;color:var(--muted);padding:6px 15px;font-size:13px;font-weight:700;cursor:pointer}
+  .seg button.on{background:var(--accent);color:#fff}
+  .ctl .sp{margin-left:auto;display:flex;gap:8px;align-items:center}
+  .ctl .sp button{border:1px solid var(--line);background:#fff;color:var(--muted);border-radius:8px;padding:5px 13px;font-size:12.5px;cursor:pointer}
+  .sheet{background:#fff;color:#111;width:960px;max-width:100%;margin:0 auto 18px;padding:26px 30px 30px;border:1px solid #c9cfd9;border-radius:4px;box-shadow:0 2px 14px rgba(0,0,0,.10);font-family:"MS Gothic","Osaka-Mono","Hiragino Kaku Gothic ProN",monospace,sans-serif;font-size:12px}
+  .ttl{text-align:center;font-size:27px;font-weight:700;letter-spacing:.45em;text-indent:.45em;margin:4px 0 18px}
+  .head{display:flex;gap:18px}.hl{flex:1 1 auto;min-width:0}.hr{flex:0 0 392px}
+  .cust{font-size:15px;margin:0 0 2px}.sama{padding-left:108px;font-size:13px;margin:0 0 10px}
+  .tkcode{font-size:11.5px;margin:0 0 1px}.tktel{font-size:11.5px;padding-left:14px;margin:0 0 12px}
+  .lead2{font-size:12.5px;margin:0 0 12px}.kv{font-size:12.5px;margin:0 0 3px}
+  .uline{border-bottom:1px solid #999;padding:2px 0 3px;margin:0 0 9px;font-size:12px}
+  .gsum{font-size:17px;padding:3px 0 5px;border-bottom:2px solid #111;display:inline-block;min-width:430px;margin:2px 0 0}
+  .pageno{display:flex;justify-content:flex-end;gap:26px;font-size:11.5px;margin:0 0 2px}.pageno .lb{letter-spacing:.2em}
+  .hrrow{font-size:11.5px;margin:0 0 2px}.hrrow.d{margin-bottom:9px}
+  .co{font-size:15px;font-weight:700;margin:6px 0 3px}
+  .stampbox{display:flex;justify-content:flex-end;margin-top:8px}.stampbox div{width:58px;height:46px;border:1px solid #111}.stampbox div+div{border-left:none}
+  table.it{width:100%;border-collapse:collapse;margin-top:14px;font-size:11.5px;table-layout:fixed}
+  table.it th,table.it td{border:1px solid #333;padding:2px 5px}
+  table.it th{background:#d9dde4;text-align:center;font-weight:700;letter-spacing:.25em;padding:4px 2px}
+  table.it td.nm{text-align:left;line-height:1.45;word-break:break-all}
+  table.it td.nm .cd{display:block;font-size:11px}
+  table.it td.u{text-align:center}table.it td.n{text-align:right}table.it td.bk{text-align:left}
+  tr.pad td{height:19px} tr.sum td{font-weight:700} tr.sum td.lb{text-align:center}
+  .io{display:none} tr.supsec{display:none}
+  @media print{body{background:#fff;padding:0}.ctl{display:none}.sheet{box-shadow:none;border:none;margin:0;width:auto;page-break-after:always}}`;
+  const html=`<!doctype html><html lang="ja"><head><meta charset="utf-8"><title>見積書 ${esc2(H.no)}</title><style>${css}</style></head><body>
+  <div class="ctl"><span style="font-size:13px;font-weight:700">見積書プレビュー</span>
+    <span style="color:var(--muted);font-size:12.5px">お客様に渡るのはこの形です</span>
+    <span class="sp"><button id="pr">印刷 / PDF</button></span></div>
+  <div id="sheets">${build(false)}</div>
+  <script>
+  document.getElementById('pr').onclick=function(){window.print()};
+  <\/script></body></html>`;
+  const w=window.open('','_blank');
+  if(!w){ toast('ポップアップがブロックされました。許可してください'); return; }
+  w.document.open(); w.document.write(html); w.document.close();
+}
+// 自社情報（管理ページで変更可・端末共有はGASの条件プリセットと別管理）
+function getSelfInfo(){
+  let o={}; try{ o=JSON.parse(localStorage.getItem('mitsumori_self')||'{}'); }catch(_){}
+  return Object.assign({co:'株式会社　丸紅',zip:'427-0113',addr:'静岡県島田市湯日1番地の1',
+    tel:'0547-30-0355',fax:'0547-38-6007',tantoTel:''},o);
+}
+
+// ===== 仕入先ごとのまとめ（バー・小計・畳む・並べ替え） =====
+let SUPFOLD={};
+// 表示のまとまり＝読み込んだPDF単位（同じ仕入先でも枚数で分ける）。出力は会社単位のまま。
+const grpKey=l=>String(l.batch==null?('s:'+(l.supplier||'')):l.batch);
+function grpList(){ const out=[]; LINES.forEach(l=>{ if(l.kind!=='item')return;
+  const k=grpKey(l); if(!out.some(g=>g.key===k)) out.push({key:k, sup:l.supplier||'', src:l.src||''}); }); return out; }
+function grpTotals(key){ let n=0,c=0,s=0;
+  LINES.forEach(l=>{ if(l.kind!=='item'||grpKey(l)!==key)return; n++; c+=l.cost*l.qty; s+=lineSell(l)*l.qty; });
+  return {n,c,s}; }
+// 同じ仕入先が複数枚あるときだけ「（N枚目）」を付ける
+function grpLabels(){
+  const gs=grpList(), cnt={};
+  gs.forEach(g=>{ cnt[g.sup]=(cnt[g.sup]||0)+1; });
+  const seq={}; const map={};
+  gs.forEach(g=>{ seq[g.sup]=(seq[g.sup]||0)+1;
+    map[g.key]= cnt[g.sup]>1 ? `${g.sup||'（会社名なし）'}（${seq[g.sup]}枚目）` : (g.sup||'（会社名なし）'); });
+  return map;
+}
+function renderSupBar(_x, multi){
+  const wrap=$('supBarWrap'), bar=$('supBar'); if(!wrap||!bar)return;
+  const gs=grpList(); wrap.hidden=!(gs.length>1); if(gs.length<=1)return;
+  const lab=grpLabels();
+  bar.innerHTML=gs.map(g=>{ const t=grpTotals(g.key), f=!!SUPFOLD[g.key];
+    return `<div class="supchip" data-supchip="${esc(g.key)}" draggable="true" title="${esc(g.src||'')}&#10;クリックでここへ移動">`+
+      `<span class="gr">⠿</span><div style="min-width:0"><div class="nm">${esc(lab[g.key])}</div>`+
+      `<div class="sub">${t.n}件 ・ 売上 ¥${t.s.toLocaleString()}${f?' ・ 畳み中':''}</div></div>`+
+      `<button class="x" data-supx="${esc(g.key)}" title="このぶんを削除">×</button></div>`;
+  }).join('');
+  const nSup=new Set(gs.map(g=>g.sup)).size;
+  const h=$('supBarHint');
+  if(h)h.textContent=`${nSup}社／${gs.length}件の読み込み ・ クリックで移動、⠿で並べ替え`+
+    (gs.length>nSup?'　※同じ仕入先はエクスポート時に1社にまとまります':'');
+}
+// 表示のまとまり単位でLINESを並べ替える
+function reorderSuppliers(fromKey,toKey){
+  if(fromKey===toKey)return;
+  const keys=grpList().map(g=>g.key);
+  if(keys.indexOf(fromKey)<0||keys.indexOf(toKey)<0)return;
+  const ord=keys.slice(); ord.splice(ord.indexOf(toKey),0,ord.splice(ord.indexOf(fromKey),1)[0]);
+  const out=[]; ord.forEach(k=>out.push(...LINES.filter(l=>grpKey(l)===k)));
+  LINES.filter(l=>!out.includes(l)).forEach(l=>out.push(l));
+  LINES=out;
+}
+
 function render(animate){
   const tb=$('rows'); tb.innerHTML='';
   let tc=0,ts=0,ni=0,nm=0,newList=[];
-  const itemSups=[...new Set(LINES.filter(x=>x.kind==='item').map(x=>x.supplier||''))];
-  const multiSup=itemSups.length>1; let shownSup=null;
+  const groups=grpList(), gLab=grpLabels();
+  const itemSups=[...new Set(groups.map(g=>g.sup))];
+  const multiSup=groups.length>1; let shownKey=null;
   LINES.forEach((l,i)=>{
-    // 複数仕入先のときは、仕入先が変わる所に区切り見出しを入れる
-    if(l.kind==='item' && multiSup && (l.supplier||'')!==shownSup){
-      shownSup=l.supplier||'';
+    // 読み込んだPDFごと（同じ仕入先でも枚数ごと）に区切り見出しを入れる
+    const gk=grpKey(l);
+    if(l.kind==='item' && multiSup && gk!==shownKey){
+      shownKey=gk;
+      const st=grpTotals(gk), folded=!!SUPFOLD[gk], g=groups.find(x=>x.key===gk)||{sup:'',src:''};
+      const sfx=(gLab[gk]||'').replace(g.sup||'（会社名なし）','');   // 「（2枚目）」の部分
       const hr=document.createElement('tr'); hr.className='supdiv';
-      hr.innerHTML=`<td colspan="10" style="background:var(--chip,#eef2ff);padding:5px 10px;border-top:2px solid var(--accent);text-align:left">▼ <input class="supname" data-sup="${esc(shownSup)}" value="${esc(shownSup)}" placeholder="会社名を入力" style="border:1px solid var(--line);background:var(--bg,#fff);color:var(--accent);font-weight:700;border-radius:6px;padding:3px 8px;min-width:200px;font-size:.9rem;text-align:left"> <button class="delrow supdel" data-supdel="${esc(shownSup)}" title="この会社の明細をまとめて削除">×</button></td>`;
+      hr.innerHTML=`<td colspan="10" style="background:var(--chip,#eef2ff);padding:6px 10px;border-top:2px solid var(--accent);text-align:left">`+
+        `<span style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">`+
+        `<button class="supfold" data-supfold="${esc(gk)}" title="${folded?'開く':'畳む'}" style="border:none;background:none;color:var(--accent);cursor:pointer;font-size:.8rem;padding:0 2px;transform:rotate(${folded?-90:0}deg)">▼</button>`+
+        `<input class="supname" data-sup="${esc(gk)}" value="${esc(g.sup)}" placeholder="会社名を入力" style="border:1px solid var(--line);background:var(--bg,#fff);color:var(--accent);font-weight:700;border-radius:6px;padding:3px 8px;min-width:200px;font-size:.9rem;text-align:left">`+
+        (sfx?`<span style="color:var(--accent);font-weight:700;font-size:.85rem" title="${esc(g.src||'')}">${esc(sfx)}</span>`:'')+
+        `<span class="hint" style="margin:0">${st.n}件 ／ 仕入 ¥${st.c.toLocaleString()} ／ 売上 ¥${st.s.toLocaleString()}</span>`+
+        `<button class="delrow supdel" data-supdel="${esc(gk)}" title="このぶんの明細をまとめて削除" style="margin-left:auto">×</button>`+
+        `</span></td>`;
       tb.appendChild(hr);
     }
+    const foldedRow = (l.kind==='item' && multiSup && !!SUPFOLD[gk]);   // 畳んでいるぶんの明細は表示しない（合計には入れる）
     const tr=document.createElement('tr');
     if(animate){ tr.classList.add('enter'); tr.style.animationDelay=(i*0.035)+'s'; }
     if(l.kind==='sec'){ tr.className='sec';
@@ -873,8 +1060,9 @@ function render(animate){
       `<td class="l">${tag} <button class="mschip" data-mschip="${i}" title="クリックで検索・選択">${l.code?esc(l.code+'｜'+(codeName(l.code)||l.name||'')):'<span class=\'hint\'>コードを選択 ▾</span>'}</button></td>`+
       `<td><button class="addrow" data-add="${i}" title="この下に1行追加">＋</button><button class="delrow" data-del="${i}">×</button></td>`;
     if(String(l.unit||'').trim()==='回'){ tr.classList.add('warnrow'); tr.title='単位が「回」の行です（運搬費・経費など要確認）'; }
-    tb.appendChild(tr);
+    if(!foldedRow) tb.appendChild(tr);
   });
+  renderSupBar(itemSups, multiSup);
   setTotals(tc,ts,nm,ni,newList);
   if(typeof saveDraft==='function')saveDraft();
 }
@@ -936,13 +1124,16 @@ function renderDraftList(){
 function openDraft(id){
   const d=DRAFTS.find(x=>x.id===id); if(!d)return;
   curDraftId=d.id; curDraftName=d.name; curSupplier=d.supplier||''; LINES=d.lines;
+  LINES.forEach(l=>{ const b=parseInt(l.batch,10); if(b>BATCH_SEQ)BATCH_SEQ=b; });   // 続きを読み込んだ後に追加しても番号が衝突しないように
   HKEYS.forEach(k=>{ if($(k)&&d.header&&d.header[k]!=null)$(k).value=d.header[k]; });
   setToday();   // 見積日は保存値ではなく常に今日
   if(typeof trashClear==='function')trashClear();   // 別の見積に切り替えたら戻せる行は持ち越さない
   render(); showStep(2); toast(`「${d.name}」を再開`);
 }
 function removeDraft(id){ DRAFTS=DRAFTS.filter(d=>d.id!==id); persistDrafts(); renderDraftList(); }
-function newDraft(){ curDraftId=null; curDraftName=''; LINES=[]; if($('hNo'))$('hNo').value=''; setToday(); if(typeof trashClear==='function')trashClear(); render(); renderDraftList(); toast('新規作成'); }
+function newDraft(){ curDraftId=null; curDraftName=''; LINES=[]; if($('hNo'))$('hNo').value='';
+  curSupplier=''; if($('hSupplier'))$('hSupplier').value='';   // 新規＝仕入先名も持ち越さない
+  setToday(); if(typeof trashClear==='function')trashClear(); render(); renderDraftList(); toast('新規作成'); }
 // 手入力モード：PDFなしで空の明細から②を始める
 function startManual(){
   newDraft(); curSupplier='';
@@ -979,9 +1170,9 @@ $('rows').addEventListener('change',e=>{
   const el=e.target;
   if(el.classList.contains('matchsel')){ const i=+el.dataset.code; LINES[i].code=el.value; recompute(); }
   else if(el.classList.contains('celled') && (el.dataset.k==='name'||el.dataset.k==='unit')){ resolveAll(); }
-  else if(el.classList.contains('supname')){   // 区切りの会社名を編集→そのグループの仕入先名を一括更新
-    const oldS=el.dataset.sup||'', newS=(el.value||'').trim();
-    LINES.forEach(l=>{ if(l.kind==='item' && (l.supplier||'')===oldS) l.supplier=newS; });
+  else if(el.classList.contains('supname')){   // 区切りの会社名を編集→そのまとまりの仕入先名を一括更新
+    const key=el.dataset.sup||'', newS=(el.value||'').trim();
+    LINES.forEach(l=>{ if(grpKey(l)===key) l.supplier=newS; });
     render(); saveDraft();
   }
 });
@@ -1008,16 +1199,64 @@ function trashRestore(id){
 $('trashRows').addEventListener('click',e=>{ const b=e.target.closest('[data-undel]'); if(b)trashRestore(+b.dataset.undel); });
 $('trashClear').addEventListener('click',()=>{ if(TRASH.length&&confirm('戻せる行のリストを空にしますか？'))trashClear(); });
 
+if($('btnPreview'))$('btnPreview').addEventListener('click',openPreview);
+// 区切り行の▼で畳む／開く
+$('rows').addEventListener('click',e=>{
+  const f=e.target.closest('[data-supfold]');
+  if(f){ const s=f.dataset.supfold; SUPFOLD[s]=!SUPFOLD[s]; render(); }
+});
+// 仕入先バー：クリックで移動、×で削除、⠿で並べ替え
+(function(){
+  const bar=$('supBar'); if(!bar)return;
+  bar.addEventListener('click',e=>{
+    const x=e.target.closest('[data-supx]');
+    if(x){ const key=x.dataset.supx, lab=grpLabels()[key]||'このぶん';
+      const n=LINES.filter(l=>grpKey(l)===key).length;
+      if(confirm('「'+lab+'」の明細 '+n+'件 をまとめて削除しますか？\n（この削除は元に戻せません）')){
+        LINES=LINES.filter(l=>grpKey(l)!==key); delete SUPFOLD[key]; render(); saveDraft(); }
+      return; }
+    const c=e.target.closest('[data-supchip]'); if(!c)return;
+    const sup=c.dataset.supchip;
+    if(SUPFOLD[sup]){ SUPFOLD[sup]=false; render(); }
+    const row=[...document.querySelectorAll('#rows .supdiv .supname')].find(i=>i.dataset.sup===sup);
+    if(row){ const tr=row.closest('tr'); tr.scrollIntoView({behavior:'smooth',block:'center'});
+      tr.style.transition='box-shadow .25s'; tr.style.boxShadow='0 0 0 3px var(--accent-soft)';
+      setTimeout(()=>{tr.style.boxShadow='';},900); }
+  });
+  let dsup=null;
+  bar.addEventListener('dragstart',e=>{ const c=e.target.closest('[data-supchip]'); if(!c)return;
+    dsup=c.dataset.supchip; c.style.opacity='.45'; });
+  bar.addEventListener('dragend',e=>{ [...bar.children].forEach(c=>{c.style.opacity='';c.style.borderStyle='';}); dsup=null; });
+  bar.addEventListener('dragover',e=>{ e.preventDefault(); const c=e.target.closest('[data-supchip]');
+    [...bar.children].forEach(x=>x.style.borderStyle=''); if(c&&c.dataset.supchip!==dsup)c.style.borderStyle='dashed'; });
+  bar.addEventListener('drop',e=>{ e.preventDefault(); const c=e.target.closest('[data-supchip]');
+    if(c&&dsup!==null){ reorderSuppliers(dsup,c.dataset.supchip); render(); saveDraft(); } });
+  if($('supFoldAll'))$('supFoldAll').addEventListener('click',()=>{
+    grpList().forEach(g=>SUPFOLD[g.key]=true); render(); });
+  if($('supOpenAll'))$('supOpenAll').addEventListener('click',()=>{ SUPFOLD={}; render(); });
+})();
+// ②のドロップ領域：PDFを追加
+(function(){
+  const dz=$('supDrop'); if(!dz)return;
+  dz.addEventListener('click',()=>{ const f=$('pdfAddIn')||$('pdfIn'); if(f)f.click(); });
+  ['dragenter','dragover'].forEach(ev=>dz.addEventListener(ev,e=>{e.preventDefault();e.stopPropagation();
+    dz.style.borderColor='var(--accent)'; dz.style.background='var(--accent-soft)'; dz.style.color='var(--accent)';}));
+  ['dragleave','drop'].forEach(ev=>dz.addEventListener(ev,e=>{e.preventDefault();e.stopPropagation();
+    dz.style.borderColor=''; dz.style.background=''; dz.style.color='';}));
+  dz.addEventListener('drop',e=>{ const fs=[...(e.dataTransfer&&e.dataTransfer.files||[])].filter(f=>/\.pdf$/i.test(f.name||''));
+    if(fs.length) addPdfFiles(fs); });
+})();
+
 $('rows').addEventListener('click',e=>{
   const sd=e.target.closest('[data-supdel]');
-  if(sd){ const sup=sd.dataset.supdel||'';
-    const n=LINES.filter(l=>(l.supplier||'')===sup).length;
-    if(confirm('「'+(sup||'（会社名なし）')+'」の明細 '+n+'件 をまとめて削除しますか？\n（この削除は元に戻せません）')){
-      LINES=LINES.filter(l=>(l.supplier||'')!==sup); render(); saveDraft(); }
+  if(sd){ const key=sd.dataset.supdel||'', lab=grpLabels()[key]||'このぶん';
+    const n=LINES.filter(l=>grpKey(l)===key).length;
+    if(confirm('「'+lab+'」の明細 '+n+'件 をまとめて削除しますか？\n（この削除は元に戻せません）')){
+      LINES=LINES.filter(l=>grpKey(l)!==key); delete SUPFOLD[key]; render(); saveDraft(); }
     return; }
   const ad=e.target.closest('[data-add]');
   if(ad){ const i=+ad.dataset.add, p=curProfile();
-    LINES.splice(i+1,0,{kind:'item',name:'',qty:1,unit:'',cost:0,margin:p.defMargin,roundUnit:p.defUnit,roundMode:p.defMode,code:'',cand:[],verdict:'new',supplier:(LINES[i]&&LINES[i].supplier)||'',memo:''});
+    LINES.splice(i+1,0,{kind:'item',name:'',qty:1,unit:'',cost:0,margin:p.defMargin,roundUnit:p.defUnit,roundMode:p.defMode,code:'',cand:[],verdict:'new',supplier:(LINES[i]&&LINES[i].supplier)||'',batch:(LINES[i]?LINES[i].batch:null),src:(LINES[i]&&LINES[i].src)||'',memo:''});
     render(); saveDraft(); return; }
   const del=e.target.closest('[data-del]');
   if(del){ const i=+del.dataset.del; if(LINES[i])trashPush(LINES[i],i);
@@ -1025,7 +1264,10 @@ $('rows').addEventListener('click',e=>{
   const chip=e.target.closest('[data-mschip]'); if(chip){ openMsInline(+chip.dataset.mschip, chip); return; }
   const ms=e.target.closest('[data-ms]'); if(ms){ openMasterSearch(+ms.dataset.ms); }
 });
-function addEmptyRow(){ const l={kind:'item',name:'',qty:1,unit:'',cost:0,margin:curProfile().defMargin,roundUnit:curProfile().defUnit,roundMode:curProfile().defMode,code:'',cand:[],verdict:'new'};LINES.push(l);render(); }
+function addEmptyRow(){ const last=LINES[LINES.length-1];
+  const l={kind:'item',name:'',qty:1,unit:'',cost:0,margin:curProfile().defMargin,roundUnit:curProfile().defUnit,roundMode:curProfile().defMode,code:'',cand:[],verdict:'new',
+    supplier:(last&&last.supplier)||curSupplier||'',batch:(last?last.batch:null),src:(last&&last.src)||''};
+  LINES.push(l);render(); }
 $('addRow').addEventListener('click',addEmptyRow);
 $('addRow2').addEventListener('click',addEmptyRow);
 
@@ -1062,11 +1304,25 @@ function openMsInline(idx, anchor){ const box=$('msInlineBox'); if(!box)return; 
   const qi=$('msInlineQ'); qi.value=''; renderMsInlineList(); box.style.display='block'; setTimeout(()=>{ try{qi.focus({preventScroll:true});}catch(_){qi.focus();} },0); }
 function renderMsInlineList(){ const l=LINES[msInlineIdx], listEl=$('msInlineList'); if(!l||!listEl)return;
   const q=($('msInlineQ').value||'').trim();
-  const seen={}, list=[];
-  (l.cand||[]).forEach(c=>{ if(c.code&&!seen[c.code]){seen[c.code]=1; list.push({code:c.code,name:c.name,cand:true});} });
-  if(q) searchMaster(q,40).forEach(m=>{ if(!seen[m.code]){seen[m.code]=1; list.push({code:m.code,name:m.name});} });
+  const MAXROWS=200;
+  const seen={}, cands=[], rest=[];
+  // ① 名寄せの候補を上に（検索中は候補も絞り込む）
+  (l.cand||[]).forEach(c=>{ if(!c.code||seen[c.code])return;
+    const nm=c.name||codeName(c.code)||'';
+    if(q){ const ts=q.split(/\s+/).map(msKey).filter(Boolean); const hay=msKey(c.code+' '+nm);
+      if(!ts.every(t=>hay.indexOf(t)>=0))return; }
+    seen[c.code]=1; cands.push({code:c.code,name:nm}); });
+  // ② 台帳の全件（検索が空なら先頭から、入力中は絞り込み結果）
+  const pool = q ? searchMaster(q, MAXROWS+cands.length) : (ALLMASTER||[]);
+  for(const m of pool){ if(rest.length>=MAXROWS)break; if(seen[m.code])continue; seen[m.code]=1; rest.push({code:m.code,name:m.name}); }
+  const row=(x,isC)=>`<div class="msi-row" data-mcode="${esc(x.code)}"><span class="mono" style="color:var(--accent);display:inline-block;min-width:48px;font-weight:700">${esc(x.code)}</span> ${esc(x.name)}${isC?' <span class="hint">候補</span>':''}</div>`;
+  const total=(ALLMASTER||[]).length;
   let html=`<div class="msi-row" data-mcode=""><b>— 新規登録（コードなし）—</b></div>`;
-  html+= list.length ? list.map(x=>`<div class="msi-row" data-mcode="${esc(x.code)}"><span class="mono" style="color:var(--accent);display:inline-block;min-width:48px;font-weight:700">${esc(x.code)}</span> ${esc(x.name)}${x.cand?' <span class="hint">候補</span>':''}</div>`).join('') : (q?'<div class="hint" style="padding:7px 10px">該当なし</div>':'<div class="hint" style="padding:7px 10px">品名やコードを入力して検索</div>');
+  if(cands.length) html+=`<div class="msi-head">名寄せの候補</div>`+cands.map(x=>row(x,true)).join('');
+  html+=`<div class="msi-head">${q?`検索結果${rest.length>=MAXROWS?`（上位${MAXROWS}件）`:`（${rest.length}件）`}`:`商品台帳 全${total}件`}</div>`;
+  html+= rest.length ? rest.map(x=>row(x,false)).join('')
+       : `<div class="hint" style="padding:7px 10px">${q?'該当なし':'商品台帳が読み込まれていません'}</div>`;
+  if(!q && total>MAXROWS) html+=`<div class="hint" style="padding:7px 10px">先頭${MAXROWS}件を表示中です。上の検索欄で絞り込めます。</div>`;
   listEl.innerHTML=html; }
 function pickMsInline(code){ const l=LINES[msInlineIdx]; if(l){ l.code=code; l.verdict= code? (l.verdict==='learned'?'learned':'ok') : 'new';
     if(code && !(l.cand||[]).some(c=>c.code===code)){ (l.cand=l.cand||[]).unshift({code,name:codeName(code),unit:l.unit,s:99}); } }
@@ -1217,11 +1473,14 @@ const SAMPLE=[
  ['item','グレーチング 四方枠 みぞ幅100用 枠外200*2445','台',1,28000],
  ['cond','（見積条件）※スチールアングルのL45*45はないのでL50*50で見積しています','',0,0],
 ];
+let BATCH_SEQ=0;   // 読み込んだPDF（ファイル）ごとの通し番号。同じ仕入先でも枚数で分けて表示するため
 function loadLines(arr,opts){
   opts=opts||{};
   const sup=('supplier' in opts)?(opts.supplier||''):curSupplier;
+  const batch=('batch' in opts)?opts.batch:(++BATCH_SEQ);
+  const src=opts.src||'';
   const mapped=arr.map(([kind,name,unit,qty,cost])=>{
-    const l={kind:kind==='item'?'item':'sec',name,qty:qty||0,unit:unit||'',cost:cost||0,margin:0,roundUnit:10,roundMode:'round',code:'',cand:[],verdict:'new',supplier:sup,memo:''};
+    const l={kind:kind==='item'?'item':'sec',name,qty:qty||0,unit:unit||'',cost:cost||0,margin:0,roundUnit:10,roundMode:'round',code:'',cand:[],verdict:'new',supplier:sup,batch:batch,src:src,memo:''};
     if(l.kind==='item')recalcMatch(l); return l;});
   LINES = opts.append ? LINES.concat(mapped) : mapped;
   applyProfileToLines();
@@ -1293,12 +1552,12 @@ async function processPdfFiles(fileList){
         curDraftId=null; curDraftName=(file.name||'見積').replace(/\.pdf$/i,'');  // PDF名で新しい続きを作る
         if($('hNo'))$('hNo').value='';   // 新しい見積＝番号リセット
         curSupplier=sup;
-        if($('hSupplier')&&!$('hSupplier').value) $('hSupplier').value=sup;
+        if($('hSupplier')) $('hSupplier').value=sup;   // 新しいPDF＝前回の仕入先名は必ず上書き
         applyPdfHeader(hdr);   // 件名・納入場所・有効期限は1枚目のPDFから
-        loadLines(parsed,{supplier:sup,defer:true}); replaced=true;
+        loadLines(parsed,{supplier:sup,src:file.name||'',defer:true}); replaced=true;
       } else {
         curSupplier=sup;
-        loadLines(parsed,{supplier:sup,append:true,defer:true});
+        loadLines(parsed,{supplier:sup,src:file.name||'',append:true,defer:true});
       }
       total+=parsed.filter(r=>r[0]==='item').length; nfile++;
     }
@@ -1317,27 +1576,30 @@ $('pdfIn').addEventListener('change',e=>{ processPdfFiles(e.target.files); e.tar
     const files=e.dataTransfer&&e.dataTransfer.files; if(files&&files.length) processPdfFiles(files); });
 })();
 // 追加読込（②から。今の見積に足す。複数ファイル可）
-$('pdfAddIn').addEventListener('change',async e=>{
-  const files=Array.from(e.target.files||[]); if(!files.length)return;
-  if(!LINES.length){ toast('先に①でPDFを読み込んでください'); e.target.value=''; return; }
+// 別の仕入先PDFを追加（ボタン・②のドロップ領域の両方から使う）
+async function addPdfFiles(fileList){
+  const files=Array.from(fileList||[]).filter(f=>/\.pdf$/i.test(f.name||''));
+  if(!files.length)return;
+  if(!LINES.length){ toast('先に①でPDFを読み込んでください'); return; }
   toast('PDFを追加解析中…',true);
   showLoading('PDFを追加解析中…');
   try{
     let total=0, nfile=0;
-    for(const file of files){
+    for(let idx=0; idx<files.length; idx++){
+      const file=files[idx];
       let res; try{ res=await parsePdfFile(file); }catch(err){ console.error(err); continue; }
       const {parsed,supplier}=res;
       if(!parsed.some(r=>r[0]==='item')) continue;
-      const sup=askSupplier(supplier,file);   // 自動判別できなければ会社名を入力
+      const sup=askSupplier(supplier,file,idx+1,files.length);   // 自動判別できなければ会社名を入力
       curSupplier=sup;
-      loadLines(parsed,{supplier:sup,append:true,defer:true});   // 得意先・見積番号・見積日はそのまま、明細だけ追記
+      loadLines(parsed,{supplier:sup,src:file.name||'',append:true,defer:true});   // 得意先・見積番号・見積日はそのまま、明細だけ追記
       total+=parsed.filter(r=>r[0]==='item').length; nfile++;
     }
     if(total) resolveAll();   // 追加後にまとめて名寄せ
     toastDone(total?`追加：明細 ${total} 件（${nfile}ファイル）`:'明細を自動抽出できませんでした。');
   } finally { hideLoading(); }
-  e.target.value='';
-});
+}
+$('pdfAddIn').addEventListener('change',async e=>{ await addPdfFiles(e.target.files); e.target.value=''; });
 // 近いtopを同一行にまとめる
 function clusterRows(words,tol){ tol=tol||4;
   const ws=words.slice().sort((a,b)=>a.top-b.top); const rows=[];
