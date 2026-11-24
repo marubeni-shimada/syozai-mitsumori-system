@@ -66,6 +66,9 @@
 
   .tablewrap{overflow-x:auto;border:1px solid var(--line);border-radius:10px}
   .reqbadge{display:inline-block;background:#fdecc8;color:#8a6212;border-radius:4px;font-size:.66rem;font-weight:700;padding:1px 5px;margin-left:4px;vertical-align:middle}
+  .nowtag{display:block;margin-top:3px;font-size:.72rem;color:var(--accent);font-weight:700}
+  input.picking{border-color:var(--accent) !important;background:var(--accent-soft) !important}
+  input.picking::placeholder{color:var(--accent);opacity:.75}
   .autobadge{display:inline-block;background:#e4edff;color:#2a4f9b;border-radius:4px;font-size:.66rem;font-weight:700;padding:1px 5px;margin-left:4px;vertical-align:middle}
   input.auto{border-style:dashed}
   @keyframes autoflash{0%{background:#d8e6ff;box-shadow:0 0 0 3px rgba(45,108,223,.3)}100%{background:var(--surface);box-shadow:none}}
@@ -335,8 +338,8 @@
     <div class="row">
       <div class="f"><label>見積番号（自動採番）</label><input class="s" id="hNo" value="" placeholder="エクスポート時に自動" readonly><span class="hint" id="hNoPeek" style="margin-top:4px"></span></div>
       <div class="f"><label>見積日（自動・今日）</label><input class="s" id="hDate" value="" readonly title="作成日（今日）が自動で入ります"></div>
-      <div class="f"><label>得意先コード <span class="reqbadge">必須</span></label><input class="s req" id="hTokui" value="" list="tokuiCodeList" autocomplete="off"><datalist id="tokuiCodeList"></datalist></div>
-      <div class="f"><label>得意先名 <span class="reqbadge">必須</span></label><input class="m req" id="hTokuiName" value="" list="tokuiNameList" autocomplete="off"><datalist id="tokuiNameList"></datalist></div>
+      <div class="f"><label>得意先コード <span class="reqbadge">必須</span></label><input class="s req" id="hTokui" value="" list="tokuiCodeList" autocomplete="off"><datalist id="tokuiCodeList"></datalist><span class="nowtag" id="tokuiCodeNow" hidden></span></div>
+      <div class="f"><label>得意先名 <span class="reqbadge">必須</span></label><input class="m req" id="hTokuiName" value="" list="tokuiNameList" autocomplete="off"><datalist id="tokuiNameList"></datalist><span class="nowtag" id="tokuiNameNow" hidden></span></div>
       <div class="f"><label>担当者コード</label><select id="hTanto" style="min-width:150px"></select></div>
     </div>
     <div class="row" style="margin-top:10px">
@@ -1557,19 +1560,25 @@ function fillFromName(){ const n=($('hTokuiName').value||'').trim(); const t=ALL
 if($('hTokui')){ $('hTokui').addEventListener('change',fillFromCode); }
 if($('hTokuiName')){ $('hTokuiName').addEventListener('change',fillFromName); }
 // すでに入っている欄は、クリックした瞬間だけ空にして候補を全件出す。選ばずに抜けたら元に戻す
-function bindShowAllOnFocus(id,ph){
+function bindShowAllOnFocus(id,tagId){
   const e=$(id); if(!e)return; let prev='';
-  const open=()=>{ if(e.value){ prev=e.value; e.dataset.prev=prev; e.value=''; e.placeholder=ph; } };
+  const tag=tagId?$(tagId):null;
+  const open=()=>{ if(e.value){ prev=e.value; e.dataset.prev=prev; e.value='';
+    e.placeholder=prev;                      // 今の値は薄く表示したまま（全件を出すため中身だけ空にしている）
+    e.classList.add('picking');
+    if(tag){ tag.textContent='選択中：'+prev; tag.hidden=false; } } };
   e.addEventListener('focus',open);
   e.addEventListener('mousedown',()=>{ if(document.activeElement===e)setTimeout(open,0); });
   e.addEventListener('blur',()=>{
     prev=prev||e.dataset.prev||'';
     if(!e.value.trim()&&prev){ e.value=prev; }      // 選ばなかったら戻す
-    prev=''; delete e.dataset.prev; e.placeholder=''; markRequired(); saveDraft();
+    prev=''; delete e.dataset.prev; e.placeholder=''; e.classList.remove('picking');
+    if(tag){ tag.hidden=true; tag.textContent=''; }
+    markRequired(); saveDraft();
   });
 }
-bindShowAllOnFocus('hTokui','全件から選べます（元：クリック前の値）');
-bindShowAllOnFocus('hTokuiName','全件から選べます（元：クリック前の値）');
+bindShowAllOnFocus('hTokui','tokuiCodeNow');
+bindShowAllOnFocus('hTokuiName','tokuiNameNow');
 
 // 常宏サンプル
 const SAMPLE=[
