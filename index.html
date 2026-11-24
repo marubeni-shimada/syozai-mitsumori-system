@@ -941,14 +941,14 @@ function openPreview(){
   const multiSupPv=new Set(LINES.filter(l=>l.kind==='item').map(l=>l.supplier||'')).size>1;
   const rows=[]; let grand=0, costAll=0; let cur=null;
   LINES.forEach(l=>{
-    if(l.kind==='memo'){ rows.push({t:'mm',nm:l.name||''}); return; }   // メモ行（社内用だけ）
-    if(l.kind==='sec'){ rows.push({t:'tx',nm:l.name||''}); return; }   // 摘要行
-    if(l.kind!=='item')return;
+    if(l.kind!=='item'&&l.kind!=='sec'&&l.kind!=='memo')return;
     const sup=l.supplier||'';
-    if(multiSupPv && sup!==cur){
+    if(multiSupPv && l.kind!=='memo' && sup!==cur){
       if(cur!==null) rows.push({t:'bl'});        // 前の会社の終わりに空行
       cur=sup; rows.push({t:'sup',sup});          // 会社名はブロックの先頭行
     }
+    if(l.kind==='memo'){ rows.push({t:'mm',nm:l.name||''}); return; }   // メモ行（社内用だけ）
+    if(l.kind==='sec'){ rows.push({t:'tx',nm:l.name||''}); return; }    // 摘要行
     const s=lineSell(l), amt=s*l.qty; grand+=amt; costAll+=l.cost*l.qty;
     rows.push({t:'it',cd:l.code||'',nm:l.name||'',u:l.unit||'',q:l.qty,s,amt,c:l.cost,bk:''});
   });
@@ -1162,7 +1162,7 @@ function render(animate){
   LINES.forEach((l,i)=>{
     // 読み込んだPDFごと（同じ仕入先でも枚数ごと）に区切り見出しを入れる
     const gk=grpKey(l);
-    if(l.kind==='item' && multiSup && gk!==shownKey){
+    if(multiSup && gk!==shownKey && groups.some(g=>g.key===gk)){
       shownKey=gk;
       const st=grpTotals(gk), folded=!!SUPFOLD[gk], g=groups.find(x=>x.key===gk)||{sup:'',src:''};
       const sfx=(gLab[gk]||'').replace(g.sup||'（会社名なし）','');   // 「（2枚目）」の部分
@@ -1177,7 +1177,7 @@ function render(animate){
         `</span></td>`;
       tb.appendChild(hr);
     }
-    const foldedRow = (l.kind==='item' && multiSup && !!SUPFOLD[gk]);   // 畳んでいるぶんの明細は表示しない（合計には入れる）
+    const foldedRow = (multiSup && !!SUPFOLD[gk]);   // 畳んでいるぶんは表示しない（合計には入れる）
     const tr=document.createElement('tr');
     if(animate){ tr.classList.add('enter'); tr.style.animationDelay=(i*0.035)+'s'; }
     if(l.kind==='sec'||l.kind==='memo'){ tr.className=(l.kind==='memo'?'memorow':'sec');
@@ -1186,7 +1186,7 @@ function render(animate){
       tr.innerHTML=kindCell(i,l)+
         `<td class="l" colspan="8"><input class="celled" data-i="${i}" data-k="name" value="${esc(l.name)}" placeholder="${ph}"></td>`+
         `<td><button class="delrow" data-del="${i}">×</button></td>`;
-      tb.appendChild(tr); return; }
+      if(!foldedRow) tb.appendChild(tr); return; }
     ni++;
     const sell=lineSell(l), amt=sell*l.qty; tc+=l.cost*l.qty; ts+=amt;
     const tag = l.verdict==='learned'?'<span class="tag learned">学習済</span>':l.verdict==='ok'?'<span class="tag ok">一致</span>':l.verdict==='chk'?'<span class="tag chk">要確認</span>':'<span class="tag new">新規</span>';
@@ -2130,21 +2130,21 @@ function buildCsv(){
   const multiSupCsv=supList.length>1;
   let curSup=null, first=true;
   LINES.forEach(l=>{
+    if(l.kind!=='item'&&l.kind!=='sec')return;   // メモ行は出力しない（行番号は詰まる）
+    const sup=(l.supplier||H.supplier||'');
+    if(multiSupCsv && sup!==curSup){
+      if(!first){ const s=base(); s[14]='5'; s[17]=''; zeros(s); push(s); }   // ブロック間の空行区切り
+      const h=base(); h[14]='6'; h[17]=sup; zeros(h); push(h);                 // 会社名見出し（印刷されない／伝票に表示）
+      curSup=sup; first=false;
+    }
     if(l.kind==='item'){
-      const sup=(l.supplier||H.supplier||'');
-      if(multiSupCsv && sup!==curSup){
-        if(!first){ const s=base(); s[14]='5'; s[17]=''; zeros(s); push(s); }   // ブロック間の空行区切り
-        const h=base(); h[14]='6'; h[17]=sup; zeros(h); push(h);                 // 会社名見出し（印刷されない／伝票に表示）
-        curSup=sup; first=false;
-      }
       const r=base(); const sell=lineSell(l), amt=sell*l.qty, camt=l.cost*l.qty;
       r[14]='1';r[15]=l.code||'';r[17]=l.name;r[18]='13';r[19]=l.unit;r[20]='0';r[21]='0';r[22]='0000';
       r[23]=String(l.qty);r[24]=String(sell);r[25]=String(amt);r[27]=String(amt);r[28]=String(camt);r[29]=String(l.cost);r[31]='2';r[32]='2';
-      // メモは社内用なので弥生には出さない（見積書にも出ません）
       push(r);
-    } else if(l.kind==='sec'){
+    } else {
       const r=base(); r[14]='5'; r[17]=l.name; zeros(r); push(r);   // 摘要・注記行＝種別5
-    }   // メモ行は社内用なので出力しない（行番号は詰まる）
+    }
   });
   if(multiSupCsv && !first){ const s=base(); s[14]='5'; s[17]=''; zeros(s); push(s); }   // 最後の会社のあとも空行
   // フッタ（値がある項目だけ）：件名20／納入場所22／支払条件23／有効期限24
