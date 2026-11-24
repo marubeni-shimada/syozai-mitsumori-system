@@ -1531,14 +1531,19 @@ function searchTokui(q,k=20){ const qn=tkNorm(q); if(!qn)return [];
   return out.slice(0,k).map(x=>x.t); }
 const tkRow=(t,cur)=>`<div class="msrow${t.code===cur?' on':''}" data-tc="${esc(t.code)}" style="padding:6px 8px;border-bottom:1px solid var(--line);cursor:pointer;display:flex;gap:8px;align-items:center"><span class="mono" style="color:var(--accent);min-width:46px;font-weight:700">${esc(t.code)}</span><span style="flex:1">${esc(t.name)}</span><span class="hint" style="white-space:nowrap">${esc(t.tanto||'')}</span></div>`;
 const tkHead=t=>`<div class="hint" style="padding:5px 8px;background:var(--chip,#eef2ff);border-bottom:1px solid var(--line);margin:0;font-weight:700">${t}</div>`;
-// 一覧は常に全件。検索欄に文字があれば、近いものを上にまとめて出す
-function renderTokuiBox(qEl,boxEl){
+// 検索欄に文字があれば絞り込み。得意先の欄をクリックしたときは全件（all=true）
+function renderTokuiBox(qEl,boxEl,all){
   if(!ALLTOKUI.length){ boxEl.style.display='none'; return; }
-  const q=qEl?qEl.value:'', hits=q.trim()?searchTokui(q,20):[];
+  const q=(qEl&&!all)?qEl.value:'', qq=q.trim();
   const cur=($('hTokui')&&$('hTokui').value)||'';
   let h='';
-  if(hits.length) h+=tkHead('打った文字に近いもの')+hits.map(t=>tkRow(t,cur)).join('');
-  h+=tkHead(`全件（${ALLTOKUI.length}件）`)+ALLTOKUI.map(t=>tkRow(t,cur)).join('');
+  if(qq){
+    const hits=searchTokui(q,50);
+    h = hits.length ? tkHead(`「${esc(qq)}」で絞り込み（${hits.length}件）　※欄をクリックすると全件`)+hits.map(t=>tkRow(t,cur)).join('')
+                    : tkHead(`「${esc(qq)}」に該当なし　※欄をクリックすると全件`);
+  } else {
+    h = tkHead(`全件（${ALLTOKUI.length}件）`)+ALLTOKUI.map(t=>tkRow(t,cur)).join('');
+  }
   boxEl.innerHTML=h; boxEl.style.display='block';
   const on=boxEl.querySelector('.msrow.on'); if(on)on.scrollIntoView({block:'center'});
 }
@@ -1564,6 +1569,10 @@ function pickTokui(code){
 }
 function bindTokuiSearch(qid,bid){ const qEl=$(qid), bEl=$(bid); if(!qEl||!bEl)return;
   qEl.addEventListener('input',()=>renderTokuiBox(qEl,bEl));
+  qEl.addEventListener('focus',()=>renderTokuiBox(qEl,bEl));
+  qEl.addEventListener('blur',()=>setTimeout(()=>{
+    const a=document.activeElement, keep=['tokuiQuery','hTokui','hTokuiName'];
+    if(bEl.contains(a))return; if(a&&keep.indexOf(a.id)>=0)return; hideTokuiBox(); },180));
   bEl.addEventListener('mousedown',e=>e.preventDefault());   // クリックで欄のフォーカスが外れないように
   bEl.addEventListener('click',e=>{ const r=e.target.closest('[data-tc]'); if(r){ pickTokui(r.dataset.tc); qEl.value=''; bEl.style.display='none'; } }); }
 bindTokuiSearch('tokuiQuery','tokuiResults');    // ②ヘッダ側（得意先 名寄せ）
@@ -1580,8 +1589,12 @@ if($('hTokui')){ $('hTokui').addEventListener('change',fillFromCode); }
 if($('hTokuiName')){ $('hTokuiName').addEventListener('change',fillFromName); }
 // 得意先の欄をクリックしたら一覧を出す（欄の値はそのまま残す）
 ['hTokui','hTokuiName'].forEach(id=>{ const e=$(id); if(!e)return;
-  e.addEventListener('focus',()=>renderTokuiBox($('tokuiQuery'),$('tokuiResults')));
-  e.addEventListener('blur',()=>setTimeout(()=>{ if(!$('tokuiResults').contains(document.activeElement))hideTokuiBox(); },180));
+  e.addEventListener('focus',()=>renderTokuiBox($('tokuiQuery'),$('tokuiResults'),true));   // 欄クリックは全件
+  e.addEventListener('blur',()=>setTimeout(()=>{
+    const a=document.activeElement, keep=['tokuiQuery','hTokui','hTokuiName'];
+    if($('tokuiResults').contains(a))return;
+    if(a&&keep.indexOf(a.id)>=0)return;      // 検索欄や相方の欄へ移っただけなら閉じない
+    hideTokuiBox(); },180));
 });
 document.addEventListener('mousedown',e=>{
   const b=$('tokuiResults'); if(!b||b.style.display==='none')return;
