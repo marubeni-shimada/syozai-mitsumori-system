@@ -65,10 +65,16 @@
   @keyframes pop{from{transform:scale(.6);opacity:0}to{transform:scale(1);opacity:1}}
 
   .tablewrap{overflow-x:auto;border:1px solid var(--line);border-radius:10px}
+  .hgroup{border:1px solid var(--line);border-radius:10px;padding:10px 12px 12px;margin-bottom:10px;background:var(--surface)}
+  .hgtitle{font-size:.78rem;font-weight:700;color:var(--accent);margin:0 0 8px;letter-spacing:.04em}
+  .hgroup .row{align-items:flex-start}
+  .hgroup .f.grow{flex:1 1 220px;min-width:200px}
+  .hgroup .f.grow input{width:100%}
+  .hgroup .f.grow2{flex:2 1 320px;min-width:260px}
+  .hgroup .f.grow2 input{width:100%}
   .reqbadge{display:inline-block;background:#fdecc8;color:#8a6212;border-radius:4px;font-size:.66rem;font-weight:700;padding:1px 5px;margin-left:4px;vertical-align:middle}
-  .nowtag{display:block;margin-top:3px;font-size:.72rem;color:var(--accent);font-weight:700}
-  input.picking{border-color:var(--accent) !important;background:var(--accent-soft) !important}
-  input.picking::placeholder{color:var(--accent);opacity:.75}
+  #tokuiResults .msrow:hover{background:var(--accent-soft)}
+  #tokuiResults .msrow.on{background:#eaf1ff;font-weight:700}
   .autobadge{display:inline-block;background:#e4edff;color:#2a4f9b;border-radius:4px;font-size:.66rem;font-weight:700;padding:1px 5px;margin-left:4px;vertical-align:middle}
   input.auto{border-style:dashed}
   @keyframes autoflash{0%{background:#d8e6ff;box-shadow:0 0 0 3px rgba(45,108,223,.3)}100%{background:var(--surface);box-shadow:none}}
@@ -325,33 +331,44 @@
   <!-- ② 設定 -->
   <div class="card">
     <h2>② 見積ヘッダ</h2>
-    <div class="row" style="margin-bottom:6px">
+    <div class="row" style="margin-bottom:10px">
       <span class="filebtn"><button type="button">＋PDFを追加（別の仕入先）</button><input type="file" id="pdfAddIn" accept="application/pdf" multiple></span>
       <span class="hint">今の見積に別の仕入先の明細を足します（会社ごとに見出しが付きます）</span>
     </div>
-    <div class="row" style="margin-bottom:6px">
-      <div class="f" style="flex:1;min-width:240px"><label>得意先を検索（名称・フリガナ・コード）</label>
-        <input id="tokuiQuery" placeholder="例：常宏／ｼﾞｮｳｺｳ／1430" autocomplete="off"></div>
-      <span class="hint" id="tokuiStat"></span>
+
+    <div class="hgroup">
+      <div class="hgtitle">この見積</div>
+      <div class="row">
+        <div class="f"><label>見積番号 <span class="autobadge">自動</span></label><input class="s auto" id="hNo" value="" placeholder="エクスポート時に自動" readonly><span class="hint" id="hNoPeek" style="margin-top:4px"></span></div>
+        <div class="f"><label>見積日 <span class="autobadge">自動</span></label><input class="s auto" id="hDate" value="" readonly title="作成日（今日）が自動で入ります"></div>
+        <div class="f"><label>担当者</label><select id="hTanto" style="min-width:150px"></select></div>
+        <div class="f grow"><label>仕入先名（明細の見出し） <span class="autobadge">自動</span></label><input class="m auto" id="hSupplier" value="" placeholder="PDFから自動"></div>
+      </div>
     </div>
-    <div id="tokuiResults" style="margin:0 0 10px;max-height:220px;overflow:auto;border:1px solid var(--line);border-radius:8px;display:none"></div>
-    <div class="row">
-      <div class="f"><label>見積番号（自動採番）</label><input class="s" id="hNo" value="" placeholder="エクスポート時に自動" readonly><span class="hint" id="hNoPeek" style="margin-top:4px"></span></div>
-      <div class="f"><label>見積日（自動・今日）</label><input class="s" id="hDate" value="" readonly title="作成日（今日）が自動で入ります"></div>
-      <div class="f"><label>得意先コード <span class="reqbadge">必須</span></label><input class="s req" id="hTokui" value="" list="tokuiCodeList" autocomplete="off"><datalist id="tokuiCodeList"></datalist><span class="nowtag" id="tokuiCodeNow" hidden></span></div>
-      <div class="f"><label>得意先名 <span class="reqbadge">必須</span></label><input class="m req" id="hTokuiName" value="" list="tokuiNameList" autocomplete="off"><datalist id="tokuiNameList"></datalist><span class="nowtag" id="tokuiNameNow" hidden></span></div>
-      <div class="f"><label>担当者コード</label><select id="hTanto" style="min-width:150px"></select></div>
+
+    <div class="hgroup">
+      <div class="hgtitle">得意先 <span class="hint" id="tokuiStat" style="font-weight:400"></span></div>
+      <div class="row">
+        <div class="f grow"><label>検索（名称・フリガナ・コード）</label>
+          <input id="tokuiQuery" placeholder="例：常宏／ｼﾞｮｳｺｳ／1430" autocomplete="off"></div>
+        <div class="f"><label>得意先コード <span class="reqbadge">必須</span></label><input class="s req" id="hTokui" value="" autocomplete="off" placeholder="クリックで一覧"></div>
+        <div class="f grow"><label>得意先名 <span class="reqbadge">必須</span></label><input class="m req" id="hTokuiName" value="" autocomplete="off" placeholder="クリックで一覧"></div>
+      </div>
+      <div id="tokuiResults" style="margin:8px 0 0;max-height:240px;overflow:auto;border:1px solid var(--line);border-radius:8px;display:none;background:var(--surface)"></div>
+      <div class="row" style="margin-top:8px">
+        <div class="f"><label>TEL <span class="autobadge">自動</span></label><input class="s auto" id="hTel" value="" placeholder="得意先を選ぶと自動"></div>
+        <div class="f"><label>FAX <span class="autobadge">自動</span></label><input class="s auto" id="hFax" value="" placeholder="得意先を選ぶと自動"></div>
+      </div>
     </div>
-    <div class="row" style="margin-top:10px">
-      <div class="f"><label>得意先TEL <span class="autobadge">自動</span></label><input class="s auto" id="hTel" value="" placeholder="得意先を選ぶと自動"></div>
-      <div class="f"><label>得意先FAX <span class="autobadge">自動</span></label><input class="s auto" id="hFax" value="" placeholder="得意先を選ぶと自動"></div>
-      <div class="f"><label>仕入先名（見出し） <span class="autobadge">自動</span></label><input class="m auto" id="hSupplier" value="" placeholder="PDFから自動"></div>
-    </div>
-    <div class="row" style="margin-top:10px">
-      <div class="f"><label>件名 <span class="reqbadge">必須</span></label><input class="m req" id="hKenmei" value=""></div>
-      <div class="f"><label>納入場所</label><input class="m" id="hNohin" value=""></div>
-      <div class="f"><label>支払条件</label><input class="s" id="hShiharai" value=""></div>
-      <div class="f"><label>有効期限/納期</label><input class="s" id="hYuko" value=""></div>
+
+    <div class="hgroup">
+      <div class="hgtitle">見積書に出る項目</div>
+      <div class="row">
+        <div class="f grow2"><label>件名 <span class="reqbadge">必須</span></label><input class="m req" id="hKenmei" value=""></div>
+        <div class="f grow"><label>納入場所</label><input class="m" id="hNohin" value=""></div>
+        <div class="f"><label>支払条件</label><input class="s" id="hShiharai" value=""></div>
+        <div class="f"><label>有効期限/納期</label><input class="s" id="hYuko" value=""></div>
+      </div>
     </div>
     <p class="hint">件名・納入場所・支払条件・有効期限は、弥生伝票の専用行（種別20/22/23/24）として出力されます。空欄の項目は出力されません。</p>
   </div>
@@ -1512,14 +1529,20 @@ function searchTokui(q,k=20){ const qn=tkNorm(q); if(!qn)return [];
   for(const t of ALLTOKUI){ const s=tkScore(qn,t.code,tkNorm(t.name),tkNorm(t.kana||'')); if(s>=0) out.push({t,s}); }
   out.sort((a,b)=>b.s-a.s);
   return out.slice(0,k).map(x=>x.t); }
+const tkRow=(t,cur)=>`<div class="msrow${t.code===cur?' on':''}" data-tc="${esc(t.code)}" style="padding:6px 8px;border-bottom:1px solid var(--line);cursor:pointer;display:flex;gap:8px;align-items:center"><span class="mono" style="color:var(--accent);min-width:46px;font-weight:700">${esc(t.code)}</span><span style="flex:1">${esc(t.name)}</span><span class="hint" style="white-space:nowrap">${esc(t.tanto||'')}</span></div>`;
+const tkHead=t=>`<div class="hint" style="padding:5px 8px;background:var(--chip,#eef2ff);border-bottom:1px solid var(--line);margin:0;font-weight:700">${t}</div>`;
+// 一覧は常に全件。検索欄に文字があれば、近いものを上にまとめて出す
 function renderTokuiBox(qEl,boxEl){
-  const q=qEl.value, list=searchTokui(q,20);
-  if(!q){ boxEl.style.display='none'; return; }
-  boxEl.style.display='block';
-  boxEl.innerHTML = list.length
-    ? list.map(t=>`<div class="msrow" data-tc="${esc(t.code)}" style="padding:6px 8px;border-bottom:1px solid var(--line);cursor:pointer;display:flex;gap:8px;align-items:center"><span class="mono" style="color:var(--accent);min-width:46px;font-weight:700">${esc(t.code)}</span><span style="flex:1">${esc(t.name)}</span><span class="hint" style="white-space:nowrap">${esc(t.tanto||'')}</span></div>`).join('')
-    : '<p class="hint" style="padding:6px 8px;margin:0">該当なし</p>';
+  if(!ALLTOKUI.length){ boxEl.style.display='none'; return; }
+  const q=qEl?qEl.value:'', hits=q.trim()?searchTokui(q,20):[];
+  const cur=($('hTokui')&&$('hTokui').value)||'';
+  let h='';
+  if(hits.length) h+=tkHead('打った文字に近いもの')+hits.map(t=>tkRow(t,cur)).join('');
+  h+=tkHead(`全件（${ALLTOKUI.length}件）`)+ALLTOKUI.map(t=>tkRow(t,cur)).join('');
+  boxEl.innerHTML=h; boxEl.style.display='block';
+  const on=boxEl.querySelector('.msrow.on'); if(on)on.scrollIntoView({block:'center'});
 }
+function hideTokuiBox(){ const b=$('tokuiResults'); if(b)b.style.display='none'; }
 // 入っているべき項目（得意先コード・得意先名・件名）を、空のあいだだけ黄色で強調
 function markRequired(){
   ['hTokui','hTokuiName','hKenmei'].forEach(id=>{ const e=$(id); if(!e)return;
@@ -1541,16 +1564,12 @@ function pickTokui(code){
 }
 function bindTokuiSearch(qid,bid){ const qEl=$(qid), bEl=$(bid); if(!qEl||!bEl)return;
   qEl.addEventListener('input',()=>renderTokuiBox(qEl,bEl));
+  bEl.addEventListener('mousedown',e=>e.preventDefault());   // クリックで欄のフォーカスが外れないように
   bEl.addEventListener('click',e=>{ const r=e.target.closest('[data-tc]'); if(r){ pickTokui(r.dataset.tc); qEl.value=''; bEl.style.display='none'; } }); }
 bindTokuiSearch('tokuiQuery','tokuiResults');    // ②ヘッダ側（得意先 名寄せ）
 
 // 得意先コード/名を「検索できるプルダウン（datalist）」化＋双方向オートフィル
-function populateTokuiLists(){
-  const cl=$('tokuiCodeList'), nl=$('tokuiNameList'); if(!cl||!nl||!ALLTOKUI.length)return;
-  cl.innerHTML=ALLTOKUI.map(t=>`<option value="${esc(t.code)}">${esc(t.name)}</option>`).join('');
-  nl.innerHTML=ALLTOKUI.map(t=>`<option value="${esc(t.name)}">${esc(t.code)}</option>`).join('');
-  markRequired();
-}
+function populateTokuiLists(){ markRequired(); }   // 一覧は renderTokuiBox が作ります
 function fillFromCode(){ const c=($('hTokui').value||'').trim(); const t=ALLTOKUI.find(x=>x.code===c); if(!t)return;
   $('hTokuiName').value=t.name; if($('hTel'))$('hTel').value=t.tel||''; if($('hFax'))$('hFax').value=t.fax||'';
   if($('hTanto')&&t.tanto&&!$('hTanto').value)$('hTanto').value=t.tanto; flashAuto(['hTel','hFax']); updateTokuiTag(); saveDraft(); }
@@ -1559,27 +1578,17 @@ function fillFromName(){ const n=($('hTokuiName').value||'').trim(); const t=ALL
   if($('hTanto')&&t.tanto&&!$('hTanto').value)$('hTanto').value=t.tanto; flashAuto(['hTel','hFax']); updateTokuiTag(); saveDraft(); }
 if($('hTokui')){ $('hTokui').addEventListener('change',fillFromCode); }
 if($('hTokuiName')){ $('hTokuiName').addEventListener('change',fillFromName); }
-// すでに入っている欄は、クリックした瞬間だけ空にして候補を全件出す。選ばずに抜けたら元に戻す
-function bindShowAllOnFocus(id,tagId){
-  const e=$(id); if(!e)return; let prev='';
-  const tag=tagId?$(tagId):null;
-  const open=()=>{ if(e.value){ prev=e.value; e.dataset.prev=prev; e.value='';
-    e.placeholder=prev;                      // 今の値は薄く表示したまま（全件を出すため中身だけ空にしている）
-    e.classList.add('picking');
-    if(tag){ tag.textContent='選択中：'+prev; tag.hidden=false; } } };
-  e.addEventListener('focus',open);
-  e.addEventListener('mousedown',()=>{ if(document.activeElement===e)setTimeout(open,0); });
-  e.addEventListener('blur',()=>{
-    prev=prev||e.dataset.prev||'';
-    if(!e.value.trim()&&prev){ e.value=prev; }      // 選ばなかったら戻す
-    prev=''; delete e.dataset.prev; e.placeholder=''; e.classList.remove('picking');
-    if(tag){ tag.hidden=true; tag.textContent=''; }
-    markRequired(); saveDraft();
-  });
-}
-bindShowAllOnFocus('hTokui','tokuiCodeNow');
-bindShowAllOnFocus('hTokuiName','tokuiNameNow');
-
+// 得意先の欄をクリックしたら一覧を出す（欄の値はそのまま残す）
+['hTokui','hTokuiName'].forEach(id=>{ const e=$(id); if(!e)return;
+  e.addEventListener('focus',()=>renderTokuiBox($('tokuiQuery'),$('tokuiResults')));
+  e.addEventListener('blur',()=>setTimeout(()=>{ if(!$('tokuiResults').contains(document.activeElement))hideTokuiBox(); },180));
+});
+document.addEventListener('mousedown',e=>{
+  const b=$('tokuiResults'); if(!b||b.style.display==='none')return;
+  if(b.contains(e.target))return;
+  if(e.target.id==='hTokui'||e.target.id==='hTokuiName'||e.target.id==='tokuiQuery')return;
+  hideTokuiBox();
+});
 // 常宏サンプル
 const SAMPLE=[
  ['sec','【洗車場-01】','',0,0],
