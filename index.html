@@ -81,9 +81,13 @@
   @keyframes autoflash{0%{background:#d8e6ff;box-shadow:0 0 0 3px rgba(45,108,223,.3)}100%{background:var(--surface);box-shadow:none}}
   .autoflash{animation:autoflash .9s ease-out}
   .needfill{background:#fffaf0 !important;border-color:#e0b640 !important;box-shadow:0 0 0 2px rgba(224,182,64,.22)}
-  .itemtable td:last-child,.itemtable th:last-child{position:sticky;right:0;background:var(--surface);z-index:2;box-shadow:-6px 0 6px -5px rgba(0,0,0,.18)}
+  .itemtable td:first-child,.itemtable th:first-child{position:sticky;left:0;background:var(--surface);z-index:2;box-shadow:6px 0 6px -5px rgba(0,0,0,.14)}
+  .itemtable tr.supdiv td{position:static !important;box-shadow:none !important}
+  .itemtable tr.memorow td:first-child{background:#fffdf0}
+  .itemtable tr.dupwarn td:first-child{background:#fff3f3}
+  .itemtable tr.warnrow td:first-child{background:#fff8e6}
   .mschip{border:1px solid var(--line);background:var(--bg);color:var(--fg);padding:4px 10px;border-radius:7px;cursor:pointer;font-size:.82rem;max-width:120px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;text-align:left;vertical-align:middle}
-  .itemtable input.name{min-width:150px}
+  .itemtable input.name{min-width:380px}
   .itemtable td.kindtd{white-space:nowrap;padding-left:4px;padding-right:4px}
   .itemtable select.kindsel{font-size:.78rem;padding:2px 2px;border:1px solid var(--line);border-radius:6px;background:var(--bg,#fff);color:var(--fg)}
   tr.dupwarn td{background:#fff3f3}
@@ -91,7 +95,7 @@
   tr.memorow td{background:#fffdf0}
   tr.memorow select.kindsel{border-color:#d9c46a}
   tr.memorow input.celled{color:#8a6d1a}
-  .itemtable input.name{min-width:150px}
+  .itemtable input.name{min-width:380px}
   .mschip:hover{border-color:var(--accent);color:var(--accent)}
   #msInlineBox{position:fixed;z-index:9998;background:var(--surface);border:1px solid var(--line);border-radius:10px;box-shadow:0 12px 30px rgba(0,0,0,.26);display:none;overflow:hidden}
   #msInlineQ{width:100%;border:0;border-bottom:1px solid var(--line);padding:9px 11px;font-size:.86rem;outline:none;background:var(--surface);color:var(--fg);box-sizing:border-box}
