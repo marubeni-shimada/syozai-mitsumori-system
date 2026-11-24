@@ -1556,6 +1556,20 @@ function fillFromName(){ const n=($('hTokuiName').value||'').trim(); const t=ALL
   if($('hTanto')&&t.tanto&&!$('hTanto').value)$('hTanto').value=t.tanto; flashAuto(['hTel','hFax']); updateTokuiTag(); saveDraft(); }
 if($('hTokui')){ $('hTokui').addEventListener('change',fillFromCode); }
 if($('hTokuiName')){ $('hTokuiName').addEventListener('change',fillFromName); }
+// すでに入っている欄は、クリックした瞬間だけ空にして候補を全件出す。選ばずに抜けたら元に戻す
+function bindShowAllOnFocus(id,ph){
+  const e=$(id); if(!e)return; let prev='';
+  const open=()=>{ if(e.value){ prev=e.value; e.dataset.prev=prev; e.value=''; e.placeholder=ph; } };
+  e.addEventListener('focus',open);
+  e.addEventListener('mousedown',()=>{ if(document.activeElement===e)setTimeout(open,0); });
+  e.addEventListener('blur',()=>{
+    prev=prev||e.dataset.prev||'';
+    if(!e.value.trim()&&prev){ e.value=prev; }      // 選ばなかったら戻す
+    prev=''; delete e.dataset.prev; e.placeholder=''; markRequired(); saveDraft();
+  });
+}
+bindShowAllOnFocus('hTokui','全件から選べます（元：クリック前の値）');
+bindShowAllOnFocus('hTokuiName','全件から選べます（元：クリック前の値）');
 
 // 常宏サンプル
 const SAMPLE=[
